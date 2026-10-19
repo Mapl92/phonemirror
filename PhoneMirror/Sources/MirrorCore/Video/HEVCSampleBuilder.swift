@@ -8,8 +8,8 @@ public enum HEVCSampleBuilderError: Error, Equatable {
     case sampleBuffer(OSStatus)
 }
 
-/// Wandelt Annex-B-Access-Units in `CMSampleBuffer` (4-Byte-Längenpräfix, hvcC-Formatbeschreibung),
-/// die `AVSampleBufferDisplayLayer` bzw. `VTDecompressionSession` direkt in Hardware dekodieren.
+/// Converts Annex B access units into `CMSampleBuffer`s (4-byte length prefix, hvcC format description)
+/// that `AVSampleBufferDisplayLayer` or `VTDecompressionSession` decode directly in hardware.
 public struct HEVCSampleBuilder {
     public private(set) var formatDescription: CMVideoFormatDescription?
     private var parameterSets: [UInt8: Data] = [:]
@@ -17,7 +17,7 @@ public struct HEVCSampleBuilder {
 
     public init() {}
 
-    /// Abmessungen laut aktuellem SPS, sobald bekannt.
+    /// Dimensions according to the current SPS, once known.
     public var dimensions: CMVideoDimensions? {
         formatDescription.map(CMVideoFormatDescriptionGetDimensions)
     }
@@ -25,12 +25,12 @@ public struct HEVCSampleBuilder {
     public struct Output {
         public var sampleBuffer: CMSampleBuffer
         public var isKeyframe: Bool
-        /// `true`, wenn sich mit diesem Bild die Formatbeschreibung geändert hat (z. B. Rotation).
+        /// `true` if the format description changed with this frame (e.g. rotation).
         public var formatChanged: Bool
     }
 
-    /// Liefert `nil`, solange noch kein IRAP-Bild mit gültigen Parameter-Sets gesehen wurde
-    /// oder die Access Unit keine Bilddaten enthält.
+    /// Returns `nil` as long as no IRAP frame with valid parameter sets has been seen yet
+    /// or the access unit contains no picture data.
     public mutating func makeSample(from packet: VideoPacket) throws -> Output? {
         let units = AnnexB.split(packet.annexB)
         var formatChanged = false
@@ -152,7 +152,7 @@ public struct HEVCSampleBuilder {
         )
         guard status == noErr, let sampleBuffer else { throw HEVCSampleBuilderError.sampleBuffer(status) }
 
-        // Live-Bild: sofort anzeigen statt auf eine Timebase zu warten.
+        // Live picture: display immediately instead of waiting for a timebase.
         if let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: true),
            CFArrayGetCount(attachments) > 0 {
             let dictionary = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)

@@ -42,7 +42,7 @@ import Testing
     }
 
     @Test func skipsMalformedAccessUnits() {
-        // Längenangabe der NAL größer als die Nachricht – Nachricht verwerfen, Strom weiterlesen.
+        // NAL length field larger than the message – drop the message, keep reading the stream.
         var broken = Data([0, 0, 0, 6, 1, 0, 0, 0, 99, 0x02])
         broken.append(message(type: 1, nals: [trail]))
         var parser = ServeWebStreamParser()
@@ -69,7 +69,7 @@ import Testing
         let shift: UInt16 = 0xE1, a: UInt16 = 0x04
         #expect(encoder.requests(for: .key(usage: shift, isDown: true)).first?.json["usages"] == .ints([0xE1]))
         #expect(encoder.requests(for: .key(usage: a, isDown: true)).first?.json["usages"] == .ints([0xE1, 0x04]))
-        #expect(encoder.requests(for: .key(usage: a, isDown: true)).isEmpty) // doppeltes Down ignorieren
+        #expect(encoder.requests(for: .key(usage: a, isDown: true)).isEmpty) // ignore a duplicate down
         #expect(encoder.requests(for: .key(usage: shift, isDown: false)).first?.json["usages"] == .ints([0x04]))
         #expect(encoder.requests(for: .key(usage: a, isDown: false)).first?.json["usages"] == .ints([]))
         #expect(encoder.heldKeys.isEmpty)
@@ -77,7 +77,7 @@ import Testing
 
     @Test mutating func scrollBecomesDragUntilEnded() {
         let start = TouchPoint(x: 32768, y: 32768)
-        // 85,2 Punkte = 10 % der Höhe (852 pt) → 6553,5 Einheiten.
+        // 85.2 points = 10 % of the height (852 pt) → 6553.5 units.
         let first = encoder.requests(for: .scroll(dx: 0, dy: 85.2, at: start))
         #expect(first == [touch("contact", 32768, 32768), touch("contact", 32768, 39322)])
         let second = encoder.requests(for: .scroll(dx: 0, dy: -85.2, at: start))

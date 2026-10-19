@@ -5,9 +5,9 @@ import Foundation
 import os
 import VideoToolbox
 
-/// Hardware-Dekodierung (VideoToolbox) in IOSurface-gestützte BGRA-Pixelbuffer.
-/// Anders als `AVSampleBufferDisplayLayer` erlaubt das, das Bild vor der Anzeige zu untersuchen
-/// (siehe `ContentRectDetector`). Die Ausgabe kommt auf einem VideoToolbox-Thread.
+/// Hardware decoding (VideoToolbox) into IOSurface-backed BGRA pixel buffers.
+/// Unlike `AVSampleBufferDisplayLayer`, this allows inspecting the picture before display
+/// (see `ContentRectDetector`). Output arrives on a VideoToolbox thread.
 public final class VideoDecoder: @unchecked Sendable {
     public typealias FrameHandler = @Sendable (CVPixelBuffer) -> Void
 
@@ -36,19 +36,19 @@ public final class VideoDecoder: @unchecked Sendable {
             infoFlagsOut: nil
         ) { status, _, imageBuffer, _, _ in
             guard status == noErr, let imageBuffer else {
-                if status != noErr { Self.logger.error("Dekodierfehler \(status)") }
+                if status != noErr { Self.logger.error("Decoding error \(status)") }
                 return
             }
             handler(imageBuffer)
         }
         if status != noErr {
-            // Der Decoder ist in einem schlechten Zustand – beim nächsten Keyframe neu aufbauen.
+            // The decoder is in a bad state – rebuild it at the next keyframe.
             reset()
             throw VideoDecoderError.decode(status)
         }
     }
 
-    /// Verwirft die Decoder-Session (Referenzbilder), z. B. vor einem Reset-Keyframe.
+    /// Discards the decoder session (reference frames), e.g. before a reset keyframe.
     public func reset() {
         lock.lock()
         let old = session

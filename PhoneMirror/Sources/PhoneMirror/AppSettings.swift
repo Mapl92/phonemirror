@@ -2,7 +2,7 @@
 import Foundation
 import Security
 
-/// Persistente Einstellungen (UserDefaults).
+/// Persistent settings (UserDefaults).
 @MainActor
 final class AppSettings {
     static let shared = AppSettings()
@@ -30,19 +30,19 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: Key.clipboardSync) }
     }
 
-    /// Fenstergröße relativ zur Punktgröße des iPhones (1 = 393 × 852 pt).
+    /// Window size relative to the iPhone's point size (1 = 393 × 852 pt).
     var zoom: Double {
         get { defaults.double(forKey: Key.zoom) }
         set { defaults.set(min(max(newValue, 0.4), 2), forKey: Key.zoom) }
     }
 
-    /// Verbindungsart zum iPhone.
+    /// Connection type to the iPhone.
     var connection: ConnectionKind {
         get { ConnectionKind(rawValue: defaults.string(forKey: Key.connection) ?? "") ?? .native }
         set { defaults.set(newValue.rawValue, forKey: Key.connection) }
     }
 
-    /// MCP-Server für Agents (nur 127.0.0.1).
+    /// MCP server for agents (127.0.0.1 only).
     var mcpEnabled: Bool {
         get { defaults.bool(forKey: Key.mcpEnabled) }
         set { defaults.set(newValue, forKey: Key.mcpEnabled) }
@@ -52,7 +52,7 @@ final class AppSettings {
         UInt16(clamping: defaults.integer(forKey: Key.mcpPort))
     }
 
-    /// Zufälliges Token, einmal erzeugt und dann beibehalten (sonst müsste der Agent neu eingerichtet werden).
+    /// Random token, generated once and then kept (otherwise the agent would have to be set up again).
     var mcpToken: String {
         if let token = defaults.string(forKey: Key.mcpToken), token.count >= 32 { return token }
         var bytes = [UInt8](repeating: 0, count: 24)
@@ -74,14 +74,14 @@ final class AppSettings {
 }
 
 enum ConnectionKind: String, CaseIterable {
-    /// Eigener Swift-Transport über den CoreDevice-Tunnel.
+    /// Own Swift transport over the CoreDevice tunnel.
     case native
-    /// pymobiledevice3 `serve-web` als lokale Brücke.
+    /// pymobiledevice3 `serve-web` as a local bridge.
     case serveWeb
 
     var title: String {
         switch self {
-        case .native: "Nativ (ohne Python)"
+        case .native: "Native (no Python)"
         case .serveWeb: "pymobiledevice3 (serve-web)"
         }
     }

@@ -7,7 +7,7 @@ import MirrorTestSupport
 import Testing
 
 @Suite struct ContentRectDetectorTests {
-    /// BGRA-Bild: Inhalt (dunkel mit hellen Flecken) im Bereich `content`, Rest in `padding`-Grau.
+    /// BGRA image: content (dark with bright spots) in the `content` area, the rest in `padding` gray.
     private func image(width: Int, height: Int, content: CGSize, padding: UInt8) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         for y in 0..<height {
@@ -34,7 +34,7 @@ import Testing
     }
 
     @Test func blackAlignmentPaddingIsNotACollapse() {
-        // Normalfall: 1184×2576 mit schwarzem Rand rechts/unten (hier verkleinert).
+        // Normal case: 1184×2576 with a black margin on the right/bottom (scaled down here).
         #expect(detect(image(width: 296, height: 644, content: CGSize(width: 295, height: 639), padding: 0), 296, 644) == nil)
     }
 
@@ -52,7 +52,7 @@ import Testing
 }
 
 @Suite struct VideoDecoderTests {
-    /// Echte Pipeline: Testencoder (mit kollabierten Bildern) → SampleBuilder → VideoDecoder → Erkennung.
+    /// Real pipeline: test encoder (with collapsed frames) → SampleBuilder → VideoDecoder → detection.
     @Test func decodesToBGRAAndDetectsCollapsedFrames() async throws {
         let stream = try HEVCTestStreamEncoder.encode(
             width: 320, height: 640, frameCount: 20, framesPerSecond: 30, keyframeInterval: 10,
@@ -73,7 +73,7 @@ import Testing
                 try decoder.decode(output.sampleBuffer)
             }
         }
-        decoder.reset() // wartet auf ausstehende Bilder
+        decoder.reset() // waits for pending frames
         let frames = results.frames
         #expect(frames.count == 20)
         #expect(frames.allSatisfy { $0.format == kCVPixelFormatType_32BGRA && $0.hasSurface })
@@ -124,9 +124,9 @@ private final class DetectionResults: @unchecked Sendable {
     }
 
     @Test func clipboardEventDecodes() throws {
-        let json = #"{"seq": 4, "text": "Hallo", "image": null}"#
+        let json = #"{"seq": 4, "text": "Hello", "image": null}"#
         let event = try JSONDecoder().decode(ServeWebClipboardEvent.self, from: Data(json.utf8))
-        #expect(event.seq == 4 && event.text == "Hallo" && event.image == nil)
+        #expect(event.seq == 4 && event.text == "Hello" && event.image == nil)
         let image = try JSONDecoder().decode(ServeWebClipboardEvent.self, from: Data(#"{"seq": 5, "text": null, "image": {"type": "image/png", "size": 1234}}"#.utf8))
         #expect(image.image?.size == 1234 && image.text == nil)
     }

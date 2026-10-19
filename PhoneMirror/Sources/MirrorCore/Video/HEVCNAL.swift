@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// NAL-Unit-Typen nach ITU-T H.265, Tabelle 7-1 (nur die hier relevanten).
+/// NAL unit types per ITU-T H.265, table 7-1 (only the ones relevant here).
 public enum HEVCNALType {
     public static let vps: UInt8 = 32
     public static let sps: UInt8 = 33
@@ -10,12 +10,12 @@ public enum HEVCNALType {
     public static let prefixSEI: UInt8 = 39
 
     public static func isVCL(_ type: UInt8) -> Bool { type < 32 }
-    /// IRAP-Bilder (BLA, IDR, CRA) – dort kann die Dekodierung beginnen.
+    /// IRAP pictures (BLA, IDR, CRA) – decoding can start there.
     public static func isIRAP(_ type: UInt8) -> Bool { (16...23).contains(type) }
     public static func isParameterSet(_ type: UInt8) -> Bool { (32...34).contains(type) }
 }
 
-/// Eine NAL Unit ohne Startcode.
+/// A NAL unit without start code.
 public struct HEVCNALUnit: Sendable, Equatable {
     public var data: Data
 
@@ -28,7 +28,7 @@ public struct HEVCNALUnit: Sendable, Equatable {
         return (first >> 1) & 0x3F
     }
 
-    /// `first_slice_segment_in_pic_flag`: erstes Bit nach dem 2-Byte-Header einer VCL-NAL.
+    /// `first_slice_segment_in_pic_flag`: first bit after the 2-byte header of a VCL NAL.
     public var isFirstSliceOfPicture: Bool {
         guard HEVCNALType.isVCL(type), data.count > 2 else { return false }
         return data[data.startIndex + 2] & 0x80 != 0
@@ -38,7 +38,7 @@ public struct HEVCNALUnit: Sendable, Equatable {
 public enum AnnexB {
     public static let startCode = Data([0, 0, 0, 1])
 
-    /// Zerlegt einen Annex-B-Bytestrom (3- oder 4-Byte-Startcodes) in NAL Units.
+    /// Splits an Annex B byte stream (3- or 4-byte start codes) into NAL units.
     public static func split(_ stream: Data) -> [HEVCNALUnit] {
         let bytes = [UInt8](stream)
         var units: [HEVCNALUnit] = []
@@ -47,7 +47,7 @@ public enum AnnexB {
         while i + 2 < bytes.count {
             if bytes[i] == 0, bytes[i + 1] == 0, bytes[i + 2] == 1 {
                 if let start = payloadStart {
-                    // Eine Null vor "00 00 01" gehört zum 4-Byte-Startcode, nicht zur vorigen NAL.
+                    // A zero before "00 00 01" belongs to the 4-byte start code, not to the previous NAL.
                     var end = i
                     if end > start, bytes[end - 1] == 0 { end -= 1 }
                     if end > start { units.append(HEVCNALUnit(Data(bytes[start..<end]))) }
@@ -74,16 +74,16 @@ public enum AnnexB {
     }
 }
 
-/// Gruppiert einen fortlaufenden NAL-Strom zu Access Units (je ein Bild).
-/// Eine neue Access Unit beginnt mit AUD/VPS/SPS/PPS/Prefix-SEI oder mit dem ersten Slice
-/// eines Bildes – jeweils nur, wenn die aktuelle Unit schon ein Bild enthält.
+/// Groups a continuous NAL stream into access units (one picture each).
+/// A new access unit starts with AUD/VPS/SPS/PPS/prefix SEI or with the first slice
+/// of a picture – in each case only if the current unit already contains a picture.
 public struct HEVCAccessUnitAssembler: Sendable {
     private var current: [HEVCNALUnit] = []
     private var currentHasVCL = false
 
     public init() {}
 
-    /// Liefert die abgeschlossene vorige Access Unit, sobald `unit` eine neue beginnt.
+    /// Returns the completed previous access unit as soon as `unit` starts a new one.
     public mutating func push(_ unit: HEVCNALUnit) -> [HEVCNALUnit]? {
         let type = unit.type
         let startsNewUnit = currentHasVCL && (
@@ -103,7 +103,7 @@ public struct HEVCAccessUnitAssembler: Sendable {
         return finished
     }
 
-    /// Gibt die letzte, noch offene Access Unit zurück.
+    /// Returns the last access unit that is still open.
     public mutating func flush() -> [HEVCNALUnit]? {
         defer {
             current = []

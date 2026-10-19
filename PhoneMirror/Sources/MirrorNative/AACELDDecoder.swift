@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// AAC-ELD-Dekodierung des iPhone-Tons, nach pymobiledevice3 (remote/core_device/aac_eld.py, GPL-3.0-or-later).
+// AAC-ELD decoding of the iPhone audio, after pymobiledevice3 (remote/core_device/aac_eld.py, GPL-3.0-or-later).
 import AudioToolbox
 import Foundation
 
-/// Dekodiert AAC-ELD (48 kHz, Stereo, 480 Samples pro Paket) zu Int16-PCM per AudioConverter.
-/// Nicht threadsicher – von einem Empfangs-Thread aus benutzen.
+/// Decodes AAC-ELD (48 kHz, stereo, 480 samples per packet) to Int16 PCM via AudioConverter.
+/// Not thread-safe – use from a single receive thread.
 public final class AACELDDecoder: @unchecked Sendable {
     static let magicCookie: [UInt8] = [0xF8, 0xE6, 0x40, 0x00] // AudioSpecificConfig
     static let framesPerPacket: UInt32 = 480
 
     private var converter: AudioConverterRef?
-    /// Paketdaten für den Input-Callback; gehören dem Decoder, solange der Converter darauf zeigt.
+    /// Packet data for the input callback; owned by the decoder as long as the converter points to it.
     fileprivate var packet: UnsafeMutableRawPointer?
     fileprivate var packetSize = 0
     fileprivate var packetDelivered = false
@@ -32,8 +32,8 @@ public final class AACELDDecoder: @unchecked Sendable {
         var status = AudioConverterNew(&source, &destination, &converter)
         _ = status
         guard status == noErr, let converter else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
-        // Wie pymobiledevice3: Das Ergebnis wird bewusst ignoriert – AudioToolbox meldet hier `!dat`,
-        // dekodiert die ELD-Pakete aber trotzdem korrekt.
+        // Like pymobiledevice3: the result is deliberately ignored – AudioToolbox reports `!dat` here,
+        // but decodes the ELD packets correctly anyway.
         var cookie = Self.magicCookie
         status = AudioConverterSetProperty(converter, kAudioConverterDecompressionMagicCookie, UInt32(cookie.count), &cookie)
         self.converter = converter
@@ -44,7 +44,7 @@ public final class AACELDDecoder: @unchecked Sendable {
         packet?.deallocate()
     }
 
-    /// Ein AAC-ELD-Paket (RTP-Payload) → interleaved Int16-PCM (48 kHz, Stereo).
+    /// One AAC-ELD packet (RTP payload) → interleaved Int16 PCM (48 kHz, stereo).
     public func decode(_ data: Data) throws -> Data {
         guard let converter, !data.isEmpty else { return Data() }
         packet?.deallocate()
@@ -64,7 +64,7 @@ public final class AACELDDecoder: @unchecked Sendable {
         let status = AudioConverterFillComplexBuffer(
             converter, aacInputProc, Unmanaged.passUnretained(self).toOpaque(), &frames, &bufferList, nil
         )
-        // `noMoreData` ist unser eigenes Signal „Paket aufgebraucht“, kein Fehler.
+        // `noMoreData` is our own “packet used up” signal, not an error.
         guard status == noErr || status == noMoreData else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
         return Data(bytes: output, count: Int(frames) * 4)
     }

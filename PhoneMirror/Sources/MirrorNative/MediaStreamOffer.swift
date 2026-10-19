@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// AVConference-Angebot für `mediastreamstart`, nachgebaut nach pymobiledevice3
+// AVConference offer for `mediastreamstart`, recreated after pymobiledevice3
 // (remote/core_device/media_stream_offer.py, GPL-3.0-or-later).
 import CZlib
 import Foundation
 
-/// Baut das `negotiatorOffer` (binäre Property List mit zlib-komprimiertem Protobuf „MediaBlob“).
+/// Builds the `negotiatorOffer` (binary property list with zlib-compressed protobuf “MediaBlob”).
 public enum MediaStreamOffer {
     public static let decoderName = "Viceroy 1.7.0"
     public static let modeVideo = 5
     public static let modeAudio = 6
-    /// `VRAE:0` (keine Auflösungsanpassung) führt laut pymobiledevice3 zu verworfenen Bildern – weglassen.
+    /// According to pymobiledevice3, `VRAE:0` (no resolution adaptation) leads to dropped frames – leave it out.
     public static let defaultFeatures = "FLS;SW:1;"
     static let resEntryCodecCapID: UInt64 = 50_115
     static let capturedVideoTimestamp: UInt64 = 17_137_042_128_614_416_384
@@ -95,7 +95,7 @@ public enum MediaStreamOffer {
         return out
     }
 
-    /// zlib-Format, Stufe 9 – wie Pythons `zlib.compress(…, 9)`; andere Stufen lehnt das Gerät ab.
+    /// zlib format, level 9 – like Python's `zlib.compress(…, 9)`; the device rejects other levels.
     static func zlibCompress(_ data: Data) throws -> Data {
         var destinationLength = compressBound(uLong(data.count))
         var destination = [UInt8](repeating: 0, count: Int(destinationLength))
@@ -107,7 +107,7 @@ public enum MediaStreamOffer {
     }
 }
 
-/// Minimaler Protobuf-Encoder.
+/// Minimal protobuf encoder.
 enum Protobuf {
     static func rawVarint(_ value: UInt64) -> Data {
         var value = value
@@ -121,7 +121,7 @@ enum Protobuf {
         return out
     }
 
-    /// Varint auf genau `width` Bytes aufgefüllt (redundante Fortsetzungsbytes) – wie in Apples Mitschnitten.
+    /// Varint padded to exactly `width` bytes (redundant continuation bytes) – as in Apple's captures.
     static func paddedVarint(_ value: UInt64, width: Int) -> Data {
         var raw = [UInt8](rawVarint(value))
         if raw.count > width { return paddedVarint(value & ((1 << (7 * UInt64(width))) - 1), width: width) }

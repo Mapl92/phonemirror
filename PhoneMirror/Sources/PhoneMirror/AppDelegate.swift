@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// Beim Beenden erst die Session schließen, damit pymobiledevice3 den Gerätestream sauber stoppt.
+    /// On quit, close the session first so pymobiledevice3 stops the device stream cleanly.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         wdaWarmup?.cancel()
         agentBridge.wda.stop()
@@ -40,9 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
-    /// Quelle aus den Startargumenten (NSUserDefaults-Argumentdomäne):
-    /// `-replay <datei.h265>` spielt eine Datei ab, sonst live über pymobiledevice3
-    /// (`-pymobiledevice3 <pfad>` überschreibt die Suche nach dem Programm).
+    /// Source from the launch arguments (NSUserDefaults argument domain):
+    /// `-replay <file.h265>` plays back a file, otherwise live via pymobiledevice3
+    /// (`-pymobiledevice3 <path>` overrides the search for the executable).
     private func makeTransport() -> any MirrorTransport {
         let defaults = UserDefaults.standard
         if let path = defaults.string(forKey: "replay") {
@@ -59,61 +59,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Menü
+    // MARK: - Menu
 
     private func makeMainMenu() -> NSMenu {
         let mainMenu = NSMenu()
 
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "PhoneMirror beenden", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit PhoneMirror", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         mainMenu.addItem(submenu: appMenu, title: "PhoneMirror")
 
-        let deviceMenu = NSMenu(title: "Gerät")
-        // ⌘1/⌘2/⌘3 wie bei Apples iPhone-Mirroring.
-        deviceMenu.addItem(buttonItem("Homescreen", .home, key: "1", modifiers: [.command]))
-        let switcher = NSMenuItem(title: "App-Umschalter", action: #selector(AppDelegate.showAppSwitcher(_:)), keyEquivalent: "2")
+        let deviceMenu = NSMenu(title: "Device")
+        // ⌘1/⌘2/⌘3 as in Apple's iPhone Mirroring.
+        deviceMenu.addItem(buttonItem("Home Screen", .home, key: "1", modifiers: [.command]))
+        let switcher = NSMenuItem(title: "App Switcher", action: #selector(AppDelegate.showAppSwitcher(_:)), keyEquivalent: "2")
         deviceMenu.addItem(switcher)
         deviceMenu.addItem(withTitle: "Spotlight", action: #selector(AppDelegate.openSpotlight(_:)), keyEquivalent: "3")
         deviceMenu.addItem(.separator())
-        deviceMenu.addItem(buttonItem("Sperren", .lock, key: "l", modifiers: [.command]))
+        deviceMenu.addItem(buttonItem("Lock", .lock, key: "l", modifiers: [.command]))
         deviceMenu.addItem(.separator())
-        deviceMenu.addItem(buttonItem("Lauter", .volumeUp, key: String(UnicodeScalar(NSUpArrowFunctionKey)!), modifiers: [.command]))
-        deviceMenu.addItem(buttonItem("Leiser", .volumeDown, key: String(UnicodeScalar(NSDownArrowFunctionKey)!), modifiers: [.command]))
+        deviceMenu.addItem(buttonItem("Volume Up", .volumeUp, key: String(UnicodeScalar(NSUpArrowFunctionKey)!), modifiers: [.command]))
+        deviceMenu.addItem(buttonItem("Volume Down", .volumeDown, key: String(UnicodeScalar(NSDownArrowFunctionKey)!), modifiers: [.command]))
         deviceMenu.addItem(.separator())
-        let sound = NSMenuItem(title: "Ton vom iPhone", action: #selector(AppDelegate.toggleSound(_:)), keyEquivalent: "t")
+        let sound = NSMenuItem(title: "Sound from iPhone", action: #selector(AppDelegate.toggleSound(_:)), keyEquivalent: "t")
         sound.keyEquivalentModifierMask = [.command, .option]
         deviceMenu.addItem(sound)
-        deviceMenu.addItem(withTitle: "Zwischenablage teilen", action: #selector(AppDelegate.toggleClipboard(_:)), keyEquivalent: "")
+        deviceMenu.addItem(withTitle: "Share Clipboard", action: #selector(AppDelegate.toggleClipboard(_:)), keyEquivalent: "")
         deviceMenu.addItem(.separator())
-        let connectionMenu = NSMenu(title: "Verbindung")
+        let connectionMenu = NSMenu(title: "Connection")
         for kind in ConnectionKind.allCases {
             let item = NSMenuItem(title: kind.title, action: #selector(AppDelegate.selectConnection(_:)), keyEquivalent: "")
             item.representedObject = kind.rawValue
             connectionMenu.addItem(item)
         }
-        deviceMenu.addItem(submenu: connectionMenu, title: "Verbindung")
+        deviceMenu.addItem(submenu: connectionMenu, title: "Connection")
         deviceMenu.addItem(.separator())
-        deviceMenu.addItem(withTitle: "Agent-Steuerung (MCP)", action: #selector(AppDelegate.toggleMCP(_:)), keyEquivalent: "")
-        deviceMenu.addItem(withTitle: "MCP-Befehl für Claude Code kopieren", action: #selector(AppDelegate.copyMCPCommand(_:)), keyEquivalent: "")
-        mainMenu.addItem(submenu: deviceMenu, title: "Gerät")
+        deviceMenu.addItem(withTitle: "Agent Control (MCP)", action: #selector(AppDelegate.toggleMCP(_:)), keyEquivalent: "")
+        deviceMenu.addItem(withTitle: "Copy MCP Command for Claude Code", action: #selector(AppDelegate.copyMCPCommand(_:)), keyEquivalent: "")
+        mainMenu.addItem(submenu: deviceMenu, title: "Device")
 
-        let windowMenu = NSMenu(title: "Fenster")
-        windowMenu.addItem(withTitle: "Größer", action: #selector(AppDelegate.zoomIn(_:)), keyEquivalent: "+")
-        windowMenu.addItem(withTitle: "Kleiner", action: #selector(AppDelegate.zoomOut(_:)), keyEquivalent: "-")
-        windowMenu.addItem(withTitle: "Tatsächliche Größe", action: #selector(AppDelegate.actualSize(_:)), keyEquivalent: "0")
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Larger", action: #selector(AppDelegate.zoomIn(_:)), keyEquivalent: "+")
+        windowMenu.addItem(withTitle: "Smaller", action: #selector(AppDelegate.zoomOut(_:)), keyEquivalent: "-")
+        windowMenu.addItem(withTitle: "Actual Size", action: #selector(AppDelegate.actualSize(_:)), keyEquivalent: "0")
         windowMenu.addItem(.separator())
-        windowMenu.addItem(withTitle: "Schließen", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        mainMenu.addItem(submenu: windowMenu, title: "Fenster")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        mainMenu.addItem(submenu: windowMenu, title: "Window")
         NSApp.windowsMenu = windowMenu
 
         return mainMenu
     }
 
-    // Die Menüaktionen liegen hier statt am Window-Controller: Der AppDelegate ist immer im Responder-Chain,
-    // auch wenn kein Fenster aktiv ist – sonst wären Home/Sperren im Hintergrund ausgegraut.
+    // The menu actions live here instead of on the window controller: the AppDelegate is always in the responder chain,
+    // even when no window is active – otherwise Home/Lock would be greyed out in the background.
     @objc func pressHardwareButton(_ sender: NSMenuItem) { windowController?.pressHardwareButton(sender) }
     @objc func showAppSwitcher(_ sender: Any?) { windowController?.send(.gesture(.appSwitcher)) }
-    /// ⌘-Leertaste über die Hardwaretastatur öffnet auf iOS die Suche.
+    /// ⌘-Space via the hardware keyboard opens search on iOS.
     @objc func openSpotlight(_ sender: Any?) {
         let command: UInt16 = 0xE3, space: UInt16 = 0x2C
         for event: InputEvent in [.key(usage: command, isDown: true), .key(usage: space, isDown: true),
@@ -134,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let http = try MCPHTTPServer(port: settings.mcpPort, token: settings.mcpToken, server: server)
             http.start()
             mcpServer = http
-            // WebDriverAgent vorwärmen und am Leben halten, damit `ui_tree` sofort antwortet.
+            // Pre-warm WebDriverAgent and keep it alive so `ui_tree` answers immediately.
             wdaWarmup = Task { [agentBridge] in
                 while !Task.isCancelled {
                     await agentBridge.prepareWDA()
@@ -142,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         } catch {
-            Logger(subsystem: "PhoneMirror", category: "mcp").error("MCP-Server: \(error.localizedDescription, privacy: .public)")
+            Logger(subsystem: "PhoneMirror", category: "mcp").error("MCP server: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -160,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings.mcpEnabled { startMCPServer() } else { stopMCPServer() }
     }
 
-    /// Befehl zum Einbinden in Claude Code (mit Token) in die Mac-Zwischenablage – nicht aufs iPhone.
+    /// Command for adding to Claude Code (with token) to the Mac clipboard – not to the iPhone.
     @objc func copyMCPCommand(_ sender: Any?) {
         let settings = AppSettings.shared
         let command = "claude mcp add --transport http phonemirror http://127.0.0.1:\(settings.mcpPort)/mcp "
@@ -174,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let raw = sender.representedObject as? String, let kind = ConnectionKind(rawValue: raw),
               kind != AppSettings.shared.connection else { return }
         AppSettings.shared.connection = kind
-        // Eine abgespielte Datei bleibt beim Wechsel unberührt.
+        // A file being played back stays untouched by the switch.
         guard UserDefaults.standard.string(forKey: "replay") == nil else { return }
         windowController?.replaceTransport(makeTransport())
     }
@@ -211,7 +211,7 @@ private extension NSMenu {
 }
 
 extension AppDelegate: NSMenuItemValidation {
-    /// Häkchen für die Schalter im Gerät-Menü.
+    /// Checkmarks for the toggles in the Device menu.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(toggleSound(_:)):

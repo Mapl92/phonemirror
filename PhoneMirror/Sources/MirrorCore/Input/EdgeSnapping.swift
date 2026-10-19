@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-/// iOS erkennt Randgesten oben (Mitteilungen, Kontrollzentrum) und links (Zurück) nur, wenn der Finger
-/// am Rand aufsetzt. Mit der Maus trifft man die Kante kaum, deshalb wird ein Touch, der nahe einer dieser
-/// Kanten beginnt, auf die Kante gesetzt. Nur der Startpunkt wird verschoben, die Bewegung folgt der Maus.
+/// iOS only recognizes edge gestures at the top (Notifications, Control Center) and left (Back) when the finger
+/// touches down at the edge. With the mouse you hardly ever hit the edge, so a touch that starts near one of these
+/// edges is moved onto the edge. Only the start point is moved; the movement follows the mouse.
 ///
-/// Die Unterkante ist bewusst ausgenommen: Am iPhone 15 / iOS 27 verwirft iOS injizierte Touches,
-/// die am Home-Balken beginnen (getestet). Das übernimmt `HomeIndicatorGestureRecognizer`.
+/// The bottom edge is deliberately excluded: on iPhone 15 / iOS 27, iOS discards injected touches
+/// that start at the home bar (tested). `HomeIndicatorGestureRecognizer` handles that.
 public struct EdgeSnapping: Sendable, Equatable {
-    /// Fangbereich in Punkten des Geräts (iPhone 15: 393 × 852 pt).
+    /// Snap zone in device points (iPhone 15: 393 × 852 pt).
     public var topZone: Double
     public var leftZone: Double
 
@@ -29,21 +29,21 @@ public struct EdgeSnapping: Sendable, Equatable {
     }
 }
 
-/// Erkennt die Home-Balken-Geste der Maus (am unteren Rand klicken und nach oben ziehen) und übersetzt sie
-/// in das, was iOS per HID annimmt: kurzes Wischen = Home, Wischen mit Innehalten = App-Umschalter.
-/// Solange die Geste läuft, gehen keine Touches ans Gerät.
+/// Recognizes the mouse's home bar gesture (click at the bottom edge and drag up) and translates it
+/// into what iOS accepts via HID: short swipe = Home, swipe with a pause = App Switcher.
+/// While the gesture is in progress, no touches go to the device.
 public struct HomeIndicatorGestureRecognizer: Sendable {
     public enum Result: Sendable, Equatable {
         case home, appSwitcher
     }
 
-    /// Startbereich über der Unterkante in Gerätepunkten.
+    /// Start zone above the bottom edge in device points.
     public var zone: Double = 28
-    /// Mindestweg nach oben, damit es als Wischen zählt (Punkte).
+    /// Minimum upward travel to count as a swipe (points).
     public var minimumTravel: Double = 40
-    /// So lange ruhig halten vor dem Loslassen → App-Umschalter (wie am iPhone).
+    /// Hold still this long before releasing → App Switcher (as on the iPhone).
     public var pauseForSwitcher: Double = 0.3
-    /// Bewegung unter dieser Schwelle (Punkte) gilt als Innehalten.
+    /// Movement below this threshold (points) counts as pausing.
     public var stillThreshold: Double = 3
 
     private var screen: DeviceScreen
@@ -57,7 +57,7 @@ public struct HomeIndicatorGestureRecognizer: Sendable {
 
     public var isActive: Bool { startY != nil }
 
-    /// Gibt `true` zurück, wenn der Touch am Home-Balken beginnt und von der Geste übernommen wird.
+    /// Returns `true` if the touch starts at the home bar and is taken over by the gesture.
     public mutating func began(at point: TouchPoint, time: Double) -> Bool {
         let y = points(point.y)
         guard screen.pointSize.height - y <= zone else { return false }
@@ -93,16 +93,16 @@ public enum ButtonAction: String, Sendable {
     case down, up
 }
 
-/// Ein Schritt einer vorgefertigten Geste.
+/// One step of a predefined gesture.
 public enum GestureStep: Sendable, Equatable {
     case wait(Double)
     case touch(TouchPhase, TouchPoint)
     case button(HardwareButton, ButtonAction)
 }
 
-/// Synthetische Systemgesten für Menübefehle und den Home-Balken (wie ⌘2 bei Apples iPhone-Mirroring).
+/// Synthetic system gestures for menu commands and the home bar (like ⌘2 in Apple's iPhone Mirroring).
 public enum SystemGesture: String, Sendable, CaseIterable {
-    /// Home zweimal schnell drücken – öffnet am iPhone den App-Umschalter (getestet, iOS 27).
+    /// Press Home twice quickly – opens the App Switcher on the iPhone (tested, iOS 27).
     case appSwitcher
 
     public var steps: [GestureStep] {

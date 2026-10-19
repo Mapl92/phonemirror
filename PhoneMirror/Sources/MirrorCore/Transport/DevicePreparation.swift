@@ -2,12 +2,12 @@
 import Foundation
 import os
 
-/// Stellt sicher, dass auf dem iPhone das Developer Disk Image gemountet ist – erst damit gibt es
-/// `com.apple.coredevice.displayservice` und die HID-Dienste. Nutzt Xcodes `devicectl`, das das DDI
-/// bei Bedarf personalisiert und mountet (nur bei entsperrtem iPhone möglich).
+/// Makes sure the Developer Disk Image is mounted on the iPhone – only then do
+/// `com.apple.coredevice.displayservice` and the HID services exist. Uses Xcode's `devicectl`, which
+/// personalizes and mounts the DDI if needed (only possible while the iPhone is unlocked).
 ///
-/// Muss *vor* `serve-web --native` laufen: Danach teilt sich pymobiledevice3 den Tunnel mit `remoted`,
-/// und devicectl sieht das Gerät zeitweise als getrennt.
+/// Must run *before* `serve-web --native`: afterwards pymobiledevice3 shares the tunnel with `remoted`,
+/// and devicectl temporarily sees the device as disconnected.
 public enum DevicePreparation {
     public enum Outcome: Sendable, Equatable {
         case ready(deviceName: String)
@@ -25,7 +25,7 @@ public enum DevicePreparation {
         guard await run(["devicectl", "list", "devices", "--json-output", listURL.path]) == 0,
               let data = try? Data(contentsOf: listURL),
               let list = try? JSONDecoder().decode(DeviceList.self, from: data)
-        else { return .failed("devicectl list devices fehlgeschlagen") }
+        else { return .failed("devicectl list devices failed") }
 
         guard let device = list.result.devices.first(where: { $0.isPairedIPhone }) else { return .noDevice }
         let name = device.deviceProperties?.name ?? "iPhone"
@@ -36,10 +36,10 @@ public enum DevicePreparation {
         if status == 0 { return .ready(deviceName: name) }
         let details = (try? String(contentsOf: ddiURL, encoding: .utf8)) ?? ""
         if details.contains("locked") || details.contains("10003") { return .locked(deviceName: name) }
-        return .failed("Developer Disk Image konnte nicht gemountet werden (Status \(status))")
+        return .failed("Developer Disk Image could not be mounted (status \(status))")
     }
 
-    /// Tunnel-Adresse und UDID des gekoppelten iPhones laut devicectl (nur wenn verbunden).
+    /// Tunnel address and UDID of the paired iPhone according to devicectl (only when connected).
     public static func currentEndpoint() async -> DeviceEndpoint? {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PhoneMirror-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

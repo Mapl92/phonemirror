@@ -2,8 +2,8 @@
 import Foundation
 import MirrorCore
 
-/// Minimaler RTP-Packetizer nach RFC 7798 – nur für Tests des Depacketizers.
-/// Parameter-Sets gehen als Aggregation Packet, große NALs als Fragmentation Units raus.
+/// Minimal RTP packetizer per RFC 7798 – only for testing the depacketizer.
+/// Parameter sets go out as an aggregation packet, large NALs as fragmentation units.
 public struct RTPHEVCPacketizer {
     public var maxPayload: Int
     public var payloadType: UInt8 = 100
@@ -49,11 +49,11 @@ public struct RTPHEVCPacketizer {
     }
 
     private mutating func makePacket(payload: Data, timestamp: UInt32, marker: Bool) -> Data {
-        var packet = Data([0x90, (marker ? 0x80 : 0) | payloadType]) // V=2, X=1 wie bei iOS
+        var packet = Data([0x90, (marker ? 0x80 : 0) | payloadType]) // V=2, X=1 as on iOS
         packet.append(contentsOf: [UInt8(sequenceNumber >> 8), UInt8(sequenceNumber & 0xFF)])
         packet.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian, Array.init))
         packet.append(contentsOf: withUnsafeBytes(of: ssrc.bigEndian, Array.init))
-        packet.append(contentsOf: [0x90, 0x01, 0x00, 0x01, 0xDE, 0xAD, 0xBE, 0xEF]) // 1 Wort Header-Extension
+        packet.append(contentsOf: [0x90, 0x01, 0x00, 0x01, 0xDE, 0xAD, 0xBE, 0xEF]) // 1 word of header extension
         packet.append(payload)
         sequenceNumber &+= 1
         return packet

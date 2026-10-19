@@ -3,8 +3,8 @@ import AppKit
 import MirrorCore
 import os
 
-/// Ein Fenster pro Gerät: hält die Verbindung (mit automatischem Wiederverbinden) und verbindet
-/// Video, Ton, Zwischenablage und Eingabe.
+/// One window per device: holds the connection (with automatic reconnect) and wires up
+/// video, audio, clipboard and input.
 @MainActor
 final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private var transport: any MirrorTransport
@@ -20,7 +20,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private var screen = DeviceScreen.iPhone15
     private var isResizingProgrammatically = false
 
-    /// Zuletzt angezeigtes Bild – Quelle für Agent-Screenshots.
+    /// Most recently displayed image – source for agent screenshots.
     struct Frame {
         var pixelBuffer: CVPixelBuffer
         var visible: CGSize
@@ -31,12 +31,12 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     var currentScreen: DeviceScreen { screen }
     var transportName: String { transport.displayName }
 
-    /// Agent hat etwas getan: Hinweis im Fenster, bei Touches mit Position.
+    /// The agent did something: indicator in the window, with position for touches.
     func noteAgentActivity(at point: TouchPoint?) {
         mirrorView.showAgentActivity(at: point)
     }
 
-    /// Eigenen Inhalt der Mac-Zwischenablage nicht aufs iPhone übertragen (z. B. den MCP-Befehl mit Token).
+    /// Don't transfer our own Mac clipboard content to the iPhone (e.g. the MCP command with token).
     func ignoreCurrentMacClipboard() {
         clipboard.ignoreCurrentContent()
     }
@@ -64,16 +64,16 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         clipboard.onLocalChange = { [weak self] content in self?.pushClipboard(content) }
         apply(screen: screen, resize: true)
         window.center()
-        // Position (und Größe) über Neustarts merken.
+        // Remember position (and size) across restarts.
         window.setFrameAutosaveName("PhoneMirrorWindow")
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    // MARK: - Verbindung
+    // MARK: - Connection
 
-    /// Verbindungsart wechseln: laufende Session schließen und mit dem neuen Transport verbinden.
+    /// Switch connection type: close the running session and connect with the new transport.
     func replaceTransport(_ newTransport: any MirrorTransport) {
         connectionTask?.cancel()
         connectionTask = nil
@@ -90,31 +90,31 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         connectionTask = Task { [weak self] in await self?.connectionLoop() }
     }
 
-    /// Verbinden, Ereignisse verarbeiten, bei Abbruch mit wachsender Pause neu verbinden.
+    /// Connect, process events, reconnect with a growing pause on failure.
     private func connectionLoop() async {
         var failures = 0
         while !Task.isCancelled {
             if transport.requiresDevicePreparation {
-                mirrorView.showStatus("Bereite iPhone vor …")
+                mirrorView.showStatus("Preparing iPhone…")
                 switch await DevicePreparation.ensureDeveloperDiskImage() {
                 case .ready:
                     break
                 case .locked(let name):
-                    mirrorView.showStatus("Bitte „\(name)“ entsperren …")
+                    mirrorView.showStatus("Please unlock “\(name)”…")
                     try? await Task.sleep(for: .seconds(3))
                     continue
                 case .noDevice:
-                    mirrorView.showStatus("Kein gekoppeltes iPhone gefunden.\nKopplung über Xcode/Device Hub nötig.")
+                    mirrorView.showStatus("No paired iPhone found.\nPairing via Xcode/Device Hub required.")
                     try? await Task.sleep(for: .seconds(5))
                     continue
                 case .failed(let reason):
-                    // Das DDI ist evtl. schon gemountet – trotzdem verbinden.
-                    Self.logger.notice("DDI-Vorbereitung: \(reason, privacy: .public)")
+                    // The DDI may already be mounted – connect anyway.
+                    Self.logger.notice("DDI preparation: \(reason, privacy: .public)")
                 }
             }
             guard !Task.isCancelled else { return }
-            mirrorView.showStatus("Verbinde mit \(transport.displayName) …")
-            var reason = "Verbindung beendet"
+            mirrorView.showStatus("Connecting to \(transport.displayName)…")
+            var reason = "Connection ended"
             do {
                 let session = try await transport.connect()
                 failures = 0
@@ -128,7 +128,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
             guard !Task.isCancelled else { return }
             failures += 1
             let delay = min(pow(2, Double(failures - 1)), 15)
-            mirrorView.showStatus("\(reason)\n\nNeuer Versuch in \(Int(delay)) s …")
+            mirrorView.showStatus("\(reason)\n\nRetrying in \(Int(delay)) s…")
             try? await Task.sleep(for: .seconds(delay))
         }
     }
@@ -141,7 +141,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         decoder = makeDecoder()
         for await event in session.events {
             if case .disconnected(let reason) = event {
-                if let reason { Self.logger.notice("Getrennt: \(reason, privacy: .public)") }
+                if let reason { Self.logger.notice("Disconnected: \(reason, privacy: .public)") }
                 return
             }
             handle(event)
@@ -162,7 +162,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private func makeDecoder() -> VideoDecoder {
         let screenPixels = CGSize(width: screen.pixelWidth, height: screen.pixelHeight)
         return VideoDecoder { [weak self] pixelBuffer in
-            // Erkennung auf dem Decoder-Thread, Anzeige auf dem Main Thread.
+            // Detection on the decoder thread, display on the main thread.
             let coded = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
             let collapsed = ContentRectDetector.collapsedContentSize(in: pixelBuffer)
             let visible = ContentRectDetector.visibleFraction(codedPixels: coded, screenPixels: screenPixels, collapsed: collapsed)
@@ -183,12 +183,12 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
                 if packet.resetDecoder { decoder?.reset() }
                 guard let output = try sampleBuilder.makeSample(from: packet) else { return }
                 if output.formatChanged, let dimensions = sampleBuilder.dimensions {
-                    Self.logger.notice("Videoformat: \(dimensions.width)×\(dimensions.height)")
+                    Self.logger.notice("Video format: \(dimensions.width)×\(dimensions.height)")
                 }
                 try decoder?.decode(output.sampleBuffer)
             } catch {
-                Self.logger.error("Bild verworfen: \(String(describing: error), privacy: .public)")
-                // Nach einem Dekodierfehler braucht der Decoder ein Keyframe.
+                Self.logger.error("Frame dropped: \(String(describing: error), privacy: .public)")
+                // After a decoding error the decoder needs a keyframe.
                 let session = session
                 Task { await session?.requestKeyframe() }
             }
@@ -209,12 +209,12 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
             do {
                 try await session.setClipboard(content)
             } catch {
-                Self.logger.error("Zwischenablage → iPhone: \(error.localizedDescription, privacy: .public)")
+                Self.logger.error("Clipboard → iPhone: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
 
-    // MARK: - Fenster
+    // MARK: - Window
 
     private func apply(screen: DeviceScreen, resize: Bool) {
         self.screen = screen
@@ -229,7 +229,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// Größe, die der Nutzer per Ziehen einstellt, als Zoom merken.
+    /// Remember the size the user sets by dragging as the zoom.
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let window, !isResizingProgrammatically else { return }
         settings.zoom = window.contentLayoutRect.width / screen.pointSize.width
@@ -239,7 +239,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         Task { await shutdown() }
     }
 
-    /// Schließt die Session (beendet bei Live-Betrieb den pymobiledevice3-Prozess).
+    /// Closes the session (in live mode, ends the pymobiledevice3 process).
     func shutdown() async {
         connectionTask?.cancel()
         connectionTask = nil
@@ -247,7 +247,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         await tearDownSession()
     }
 
-    // MARK: - Menü-Aktionen
+    // MARK: - Menu actions
 
     func send(_ event: InputEvent) {
         inputPump?.enqueue(event)
@@ -285,7 +285,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// Reicht Eingaben strikt in Reihenfolge an die Session weiter (Touch-Phasen dürfen sich nicht überholen).
+/// Passes input to the session strictly in order (touch phases must not overtake each other).
 @MainActor
 final class InputPump {
     private let continuation: AsyncStream<InputEvent>.Continuation
@@ -300,7 +300,7 @@ final class InputPump {
                 do {
                     try await session.send(event)
                 } catch {
-                    Self.logger.error("Eingabe fehlgeschlagen: \(String(describing: error), privacy: .public)")
+                    Self.logger.error("Input failed: \(String(describing: error), privacy: .public)")
                 }
             }
         }

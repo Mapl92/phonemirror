@@ -4,8 +4,8 @@ import CoreImage
 import MirrorCore
 import MirrorMCP
 
-/// MCP-Werkzeuge, mit denen Agents das gespiegelte iPhone steuern. Alle Aufrufe laufen über die
-/// Session des Fensters – Agent und Mensch teilen sich dieselbe Verbindung und dasselbe Bild.
+/// MCP tools with which agents control the mirrored iPhone. All calls go through the window's
+/// session – agent and human share the same connection and the same picture.
 struct AgentTools: MCPToolProvider {
     let bridge: AgentBridge
 
@@ -84,7 +84,7 @@ struct AgentTools: MCPToolProvider {
         do {
             return try await perform(name, arguments)
         } catch {
-            return .error("\(name) fehlgeschlagen: \(error.localizedDescription)")
+            return .error("\(name) failed: \(error.localizedDescription)")
         }
     }
 
@@ -104,7 +104,7 @@ struct AgentTools: MCPToolProvider {
             return .text("\(list.entries.count) elements (ids valid until the next ui_tree/find_elements):\n" + list.outline())
         case "find_elements":
             let text = args["text"]?.stringValue, type = args["type"]?.stringValue
-            guard text != nil || type != nil else { return .error("text oder type angeben.") }
+            guard text != nil || type != nil else { return .error("Specify text or type.") }
             let matches = try await bridge.refreshTree(visibleOnly: true).search(text: text, type: type)
             guard !matches.isEmpty else { return .text("No matching elements.") }
             return .text(UIElementList.describe(matches))
@@ -113,7 +113,7 @@ struct AgentTools: MCPToolProvider {
             try await bridge.tap(entry.element.center)
             return .text("Tapped [\(entry.id)] \(entry.element.type) \"\(entry.element.title ?? "")\" at (\(Int(entry.element.center.x)), \(Int(entry.element.center.y))).")
         case "type_into":
-            guard let text = args["text"]?.stringValue else { return .error("text fehlt.") }
+            guard let text = args["text"]?.stringValue else { return .error("text is missing.") }
             let entry = try await bridge.resolveElement(id: args["id"]?.intValue, text: args["field"]?.stringValue, type: nil, preferTextInput: true)
             try await bridge.tap(entry.element.center)
             try await Task.sleep(for: .milliseconds(400))
@@ -136,30 +136,30 @@ struct AgentTools: MCPToolProvider {
         case "swipe":
             guard let fx = args["from_x"]?.doubleValue, let fy = args["from_y"]?.doubleValue,
                   let tx = args["to_x"]?.doubleValue, let ty = args["to_y"]?.doubleValue
-            else { return .error("from_x, from_y, to_x und to_y sind nötig.") }
+            else { return .error("from_x, from_y, to_x and to_y are required.") }
             let duration = min(max(args["duration_ms"]?.doubleValue ?? 300, 50), 5000) / 1000
             try await bridge.swipe(from: CGPoint(x: fx, y: fy), to: CGPoint(x: tx, y: ty), duration: duration)
             return .text("Swiped (\(Int(fx)), \(Int(fy))) → (\(Int(tx)), \(Int(ty))).")
         case "type_text":
-            guard let text = args["text"]?.stringValue else { return .error("text fehlt.") }
+            guard let text = args["text"]?.stringValue else { return .error("text is missing.") }
             try await bridge.typeText(text, submit: args["submit"]?.boolValue ?? false)
             return .text("Inserted \(text.count) characters.")
         case "press_key":
             guard let key = args["key"]?.stringValue, let usage = AgentKeys.usage(for: key) else {
-                return .error("Unbekannte Taste. Erlaubt: \(AgentKeys.names.joined(separator: ", ")) oder ein Buchstabe/eine Ziffer.")
+                return .error("Unknown key. Allowed: \(AgentKeys.names.joined(separator: ", ")) or a single letter/digit.")
             }
             let modifiers = try (args["modifiers"]?.arrayValue ?? []).map { value -> UInt16 in
-                guard let name = value.stringValue, let usage = AgentKeys.modifiers[name] else { throw AgentError("Unbekannter Modifier.") }
+                guard let name = value.stringValue, let usage = AgentKeys.modifiers[name] else { throw AgentError("Unknown modifier.") }
                 return usage
             }
             try await bridge.pressKey(usage, modifiers: modifiers)
             return .text("Pressed \(key).")
         case "press_button":
-            guard let raw = args["button"]?.stringValue, let button = AgentKeys.buttons[raw] else { return .error("Unbekannte Taste.") }
+            guard let raw = args["button"]?.stringValue, let button = AgentKeys.buttons[raw] else { return .error("Unknown button.") }
             try await bridge.send([.button(button, isDown: true), .button(button, isDown: false)])
             return .text("Pressed \(raw).")
         case "system_action":
-            guard let action = args["action"]?.stringValue else { return .error("action fehlt.") }
+            guard let action = args["action"]?.stringValue else { return .error("action is missing.") }
             try await bridge.systemAction(action)
             return .text("Performed \(action).")
         case "list_apps":
@@ -168,18 +168,18 @@ struct AgentTools: MCPToolProvider {
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             return .text(apps.map { "\($0.name) — \($0.bundleID)" }.joined(separator: "\n"))
         case "launch_app":
-            guard let bundleID = args["bundle_id"]?.stringValue else { return .error("bundle_id fehlt.") }
+            guard let bundleID = args["bundle_id"]?.stringValue else { return .error("bundle_id is missing.") }
             try await bridge.launchApp(bundleID)
             return .text("Launched \(bundleID).")
         case "get_clipboard":
             switch try await bridge.clipboard() {
             case .text(let text): return .text(text)
-            case .html, .rtf: return .text("(formatierter Text – nicht als reiner Text verfügbar)")
-            case .png: return .text("(Bild in der Zwischenablage)")
-            case nil: return .text("(leer)")
+            case .html, .rtf: return .text("(formatted text – not available as plain text)")
+            case .png: return .text("(image in clipboard)")
+            case nil: return .text("(empty)")
             }
         case "set_clipboard":
-            guard let text = args["text"]?.stringValue else { return .error("text fehlt.") }
+            guard let text = args["text"]?.stringValue else { return .error("text is missing.") }
             try await bridge.setClipboard(text)
             return .text("Clipboard set.")
         case "wait":
@@ -187,12 +187,12 @@ struct AgentTools: MCPToolProvider {
             try await Task.sleep(for: .milliseconds(Int(ms)))
             return .text("Waited \(Int(ms)) ms.")
         default:
-            return .error("Unbekanntes Werkzeug \(name).")
+            return .error("Unknown tool \(name).")
         }
     }
 
     private func point(_ args: JSONValue) throws -> CGPoint {
-        guard let x = args["x"]?.doubleValue, let y = args["y"]?.doubleValue else { throw AgentError("x und y sind nötig.") }
+        guard let x = args["x"]?.doubleValue, let y = args["y"]?.doubleValue else { throw AgentError("x and y are required.") }
         return CGPoint(x: x, y: y)
     }
 }
@@ -203,7 +203,7 @@ struct AgentError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// Tastennamen → HID-Usages (Keyboard-Page) für `press_key`.
+/// Key names → HID usages (keyboard page) for `press_key`.
 enum AgentKeys {
     static let named: [String: UInt16] = [
         "return": 0x28, "enter": 0x28, "escape": 0x29, "delete": 0x2A, "backspace": 0x2A, "tab": 0x2B, "space": 0x2C,
@@ -228,7 +228,7 @@ enum AgentKeys {
     }
 }
 
-/// Main-Actor-Brücke zwischen MCP-Werkzeugen und dem Fenster (Session, letztes Bild, Hinweis).
+/// Main-actor bridge between MCP tools and the window (session, latest frame, indicator).
 @MainActor
 final class AgentBridge {
     weak var controller: MirrorWindowController?
@@ -244,16 +244,16 @@ final class AgentBridge {
     let wda = WDARunner()
     private var lastList: UIElementList?
 
-    /// Tunnel-Adresse/UDID: vom nativen Transport, sonst über devicectl.
+    /// Tunnel address/UDID: from the native transport, otherwise via devicectl.
     private func endpoint() async throws -> DeviceEndpoint {
         if let endpoint = await controller?.activeSession?.deviceEndpoint() { return endpoint }
         guard let endpoint = await DevicePreparation.currentEndpoint() else {
-            throw AgentError("Tunnel-Adresse des iPhones nicht ermittelbar (verbunden?).")
+            throw AgentError("Could not determine the iPhone's tunnel address (connected?).")
         }
         return endpoint
     }
 
-    /// WDA bei Bedarf starten; für das Vorwärmen im Hintergrund.
+    /// Start WDA if needed; for pre-warming in the background.
     func prepareWDA() async {
         guard controller?.activeSession != nil, let endpoint = try? await endpoint() else { return }
         _ = try? await wda.client(for: endpoint)
@@ -272,7 +272,7 @@ final class AgentBridge {
     func resolveElement(id: Int?, text: String?, type: String?, preferTextInput: Bool = false) async throws -> UIElementList.Entry {
         if let id {
             guard let entry = lastList?.entries.first(where: { $0.id == id }) else {
-                throw AgentError("Element [\(id)] unbekannt – erst ui_tree oder find_elements aufrufen.")
+                throw AgentError("Element [\(id)] unknown – call ui_tree or find_elements first.")
             }
             return entry
         }
@@ -284,15 +284,15 @@ final class AgentBridge {
             }
             if text == nil, let focused = fields.first { return focused }
         }
-        guard let text else { throw AgentError("id oder text angeben.") }
+        guard let text else { throw AgentError("Specify id or text.") }
         if let match = list.bestMatch(text: text, type: type) { return match }
-        // Typ passt nicht (z. B. Button statt Cell in iOS 27): ohne Typfilter erneut suchen.
+        // Type doesn't match (e.g. Button instead of Cell in iOS 27): search again without the type filter.
         if type != nil, let match = list.bestMatch(text: text) { return match }
-        throw AgentError("Kein Element mit „\(text)“ sichtbar. Tipp: ui_tree aufrufen, ggf. scrollen, dann per id tippen.")
+        throw AgentError("No element with “\(text)” visible. Tip: call ui_tree, scroll if needed, then tap by id.")
     }
 
     private func session() throws -> any MirrorSession {
-        guard let session = controller?.activeSession else { throw AgentError("Nicht mit dem iPhone verbunden.") }
+        guard let session = controller?.activeSession else { throw AgentError("Not connected to the iPhone.") }
         return session
     }
 
@@ -312,11 +312,11 @@ final class AgentBridge {
     }
 
     func screenshot(quality: Double) async throws -> Screenshot {
-        guard let frame = controller?.latestFrame else { throw AgentError("Noch kein Bild vom iPhone.") }
+        guard let frame = controller?.latestFrame else { throw AgentError("No image from the iPhone yet.") }
         let size = screen.pointSize
         let image = CIImage(cvPixelBuffer: frame.pixelBuffer)
         let extent = image.extent
-        // Sichtbarer Bereich liegt oben links; CoreImage zählt y von unten.
+        // The visible area is at the top left; CoreImage counts y from the bottom.
         let crop = CGRect(
             x: 0, y: extent.height * (1 - frame.visible.height),
             width: extent.width * frame.visible.width, height: extent.height * frame.visible.height
@@ -327,7 +327,7 @@ final class AgentBridge {
         guard let jpeg = ciContext.jpegRepresentation(
             of: scaled, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
             options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]
-        ) else { throw AgentError("Screenshot konnte nicht kodiert werden.") }
+        ) else { throw AgentError("Screenshot could not be encoded.") }
         controller?.noteAgentActivity(at: nil)
         return Screenshot(jpeg: jpeg, width: Int(size.width), height: Int(size.height),
                           ageMilliseconds: Int(Date().timeIntervalSince(frame.time) * 1000))
@@ -380,7 +380,7 @@ final class AgentBridge {
         try await send(up)
     }
 
-    /// Text über die Zwischenablage einfügen (⌘V) – funktioniert für jede Sprache und jedes Tastaturlayout.
+    /// Insert text via the clipboard (⌘V) – works for every language and keyboard layout.
     func typeText(_ text: String, submit: Bool) async throws {
         let session = try session()
         controller?.noteAgentActivity(at: nil)
@@ -401,13 +401,13 @@ final class AgentBridge {
         case "app_switcher":
             try await send([.gesture(.appSwitcher)])
         case "spotlight":
-            try await pressKey(0x2C, modifiers: [0xE3]) // ⌘Leertaste
+            try await pressKey(0x2C, modifiers: [0xE3]) // ⌘Space
         case "notification_center":
             try await swipe(from: CGPoint(x: size.width / 2, y: 0), to: CGPoint(x: size.width / 2, y: size.height * 0.6), duration: 0.25)
         case "control_center":
             try await swipe(from: CGPoint(x: size.width - 20, y: 0), to: CGPoint(x: size.width - 20, y: size.height * 0.5), duration: 0.25)
         default:
-            throw AgentError("Unbekannte Aktion \(action).")
+            throw AgentError("Unknown action \(action).")
         }
     }
 

@@ -14,7 +14,7 @@ import Testing
     }
 
     @Test func letterboxIsIgnored() {
-        // Breiteres Fenster: Video wird mittig eingepasst, links und rechts bleibt Rand.
+        // Wider window: the video is fitted centered, leaving a margin on the left and right.
         let mapper = TouchMapper(contentSize: iPhone, viewBounds: CGRect(x: 0, y: 0, width: 1000, height: 852))
         let rect = mapper.videoRect
         #expect(abs(rect.width - 393) < 0.001)
@@ -26,7 +26,7 @@ import Testing
     @Test func scaledWindowKeepsProportions() {
         let mapper = TouchMapper(contentSize: iPhone, viewBounds: CGRect(x: 0, y: 0, width: 393 * 0.5, height: 852 * 0.5))
         let point = mapper.devicePoint(for: CGPoint(x: 393 * 0.25, y: 852 * 0.125))
-        // 106,5 von 426 Punkten Höhe = 25 %.
+        // 106.5 of 426 points of height = 25 %.
         #expect(point == TouchPoint(x: 32768, y: 16384))
     }
 
@@ -54,7 +54,7 @@ import Testing
 
 @Suite struct VideoLayoutTests {
     @Test func paddedStreamIsCroppedToDisplay() {
-        // Gemessen: iPhone 15 unter iOS 27 sendet 1184 × 2576 für ein 1179 × 2556-Display.
+        // Measured: iPhone 15 on iOS 27 sends 1184 × 2576 for a 1179 × 2556 display.
         let frame = VideoLayout.videoLayerFrame(
             displaySize: CGSize(width: 393, height: 852),
             screenPixels: CGSize(width: 1179, height: 2556),
@@ -77,9 +77,9 @@ import Testing
         #expect(KeyMapping.hidUsage(forMacKeyCode: 0x06) == 0x1D) // Z (ANSI)
         #expect(KeyMapping.hidUsage(forMacKeyCode: 0x1D) == 0x27) // 0
         #expect(KeyMapping.hidUsage(forMacKeyCode: 0x24) == 0x28) // Return
-        #expect(KeyMapping.hidUsage(forMacKeyCode: 0x7E) == 0x52) // Pfeil hoch
-        #expect(KeyMapping.hidUsage(forMacKeyCode: 0x37) == 0xE3) // Command links
-        #expect(KeyMapping.hidUsage(forMacKeyCode: 0x7A) == nil)  // F1 nicht belegt
+        #expect(KeyMapping.hidUsage(forMacKeyCode: 0x7E) == 0x52) // arrow up
+        #expect(KeyMapping.hidUsage(forMacKeyCode: 0x37) == 0xE3) // left Command
+        #expect(KeyMapping.hidUsage(forMacKeyCode: 0x7A) == nil)  // F1 not mapped
     }
 
     @Test func modifiersAreRecognized() {

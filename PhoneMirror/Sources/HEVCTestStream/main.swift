@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Erzeugt eine HEVC-Testdatei (Annex B) für den Replay-Transport.
-// Aufruf: hevc-test-stream <ausgabe.h265> [sekunden=4] [breite=1179] [höhe=2556] [collapse]
-// „collapse“: jede zweite Sekunde verkleinert auf grauem Grund (Resolution Collapse wie bei iOS).
+// Generates an HEVC test file (Annex B) for the replay transport.
+// Usage: hevc-test-stream <output.h265> [seconds=4] [width=1179] [height=2556] [collapse]
+// “collapse”: every other second scaled down on a gray background (resolution collapse as on iOS).
 import Foundation
 import MirrorCore
 import MirrorTestSupport
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
-    FileHandle.standardError.write(Data("Aufruf: hevc-test-stream <ausgabe.h265> [sekunden] [breite] [höhe]\n".utf8))
+    FileHandle.standardError.write(Data("Usage: hevc-test-stream <output.h265> [seconds] [width] [height]\n".utf8))
     exit(64)
 }
 let output = URL(fileURLWithPath: arguments[1])
@@ -24,4 +24,4 @@ let data = try HEVCTestStreamEncoder.encode(
 )
 try data.write(to: output)
 let units = HEVCAccessUnitAssembler.accessUnits(in: data)
-print("\(output.path): \(width)×\(height), \(units.count) Bilder, \(data.count / 1024) KiB")
+print("\(output.path): \(width)×\(height), \(units.count) frames, \(data.count / 1024) KiB")

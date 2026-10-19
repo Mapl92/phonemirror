@@ -2,10 +2,10 @@
 import AppKit
 import MirrorCore
 
-/// Gleicht die Zwischenablage zwischen Mac und iPhone ab – wie bei Apples iPhone-Mirroring:
-/// - iPhone → Mac: Was auf dem iPhone kopiert wird, landet sofort in der Mac-Zwischenablage.
-/// - Mac → iPhone: Nur solange PhoneMirror aktiv ist (bzw. beim Aktivieren), damit nicht jede Kopie
-///   aus anderen Apps im Hintergrund aufs iPhone wandert.
+/// Syncs the clipboard between Mac and iPhone – as in Apple's iPhone Mirroring:
+/// - iPhone → Mac: whatever is copied on the iPhone lands in the Mac clipboard immediately.
+/// - Mac → iPhone: only while PhoneMirror is active (or on activation), so that not every copy
+///   from other apps in the background travels to the iPhone.
 @MainActor
 final class ClipboardBridge {
     var isEnabled = true
@@ -14,13 +14,13 @@ final class ClipboardBridge {
     private let pasteboard = NSPasteboard.general
     private var lastSeenChangeCount: Int
     private var pollTask: Task<Void, Never>?
-    /// iOS-Grenze von serve-web ist 32 MB; große Bilder gar nicht erst schicken.
+    /// serve-web's iOS limit is 32 MB; don't even send large images.
     private let maxImageBytes = 20 * 1024 * 1024
 
     init() {
         lastSeenChangeCount = NSPasteboard.general.changeCount
-        // Bewusst kein Timer mit `MainActor.assumeIsolated`: Ein Timer feuert auch in verschachtelten
-        // Runloops mitten in einem MainActor-Job – dabei stürzte die Executor-Prüfung ab (EXC_BAD_ACCESS).
+        // Deliberately no timer with `MainActor.assumeIsolated`: a timer also fires in nested
+        // run loops in the middle of a MainActor job – the executor check crashed there (EXC_BAD_ACCESS).
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -38,7 +38,7 @@ final class ClipboardBridge {
         lastSeenChangeCount = pasteboard.changeCount
     }
 
-    /// Vom iPhone kopierter Inhalt → Mac.
+    /// Content copied on the iPhone → Mac.
     func applyRemote(_ content: ClipboardContent) {
         guard isEnabled else { return }
         pasteboard.clearContents()
@@ -54,30 +54,30 @@ final class ClipboardBridge {
             pasteboard.setData(rtf, forType: .rtf)
             if let text = Self.plainText(rtf, type: .rtf) { pasteboard.setString(text, forType: .string) }
         }
-        // Eigene Änderung nicht zurück aufs iPhone spiegeln.
+        // Don't mirror our own change back to the iPhone.
         lastSeenChangeCount = pasteboard.changeCount
     }
 
-    /// Markierung der Universellen Zwischenablage (Handoff): Der Inhalt kam schon von einem anderen Gerät.
+    /// Marker of the Universal Clipboard (Handoff): the content already came from another device.
     static let remoteClipboardType = NSPasteboard.PasteboardType("com.apple.is-remote-clipboard")
 
     private func poll() {
         guard isEnabled, NSApp.isActive, pasteboard.changeCount != lastSeenChangeCount else { return }
         lastSeenChangeCount = pasteboard.changeCount
-        // Über Handoff angekommene Kopien (meist vom iPhone selbst) nicht zurückschicken – das würde
-        // formatierte Kopien auf dem iPhone durch reinen Text ersetzen.
+        // Don't send back copies that arrived via Handoff (usually from the iPhone itself) – that would
+        // replace formatted copies on the iPhone with plain text.
         if pasteboard.types?.contains(Self.remoteClipboardType) == true { return }
         if let content = currentContent() {
             onLocalChange?(content)
         }
     }
 
-    /// Reiner Text aus HTML/RTF – damit auch Apps ohne Formatierung (Terminal, Textfelder) einfügen können.
-    /// HTML nicht über NSAttributedString: Dessen HTML-Import läuft über WebKit und dreht eine
-    /// verschachtelte Main-Runloop.
+    /// Plain text from HTML/RTF – so that apps without formatting (Terminal, text fields) can paste too.
+    /// HTML not via NSAttributedString: its HTML import goes through WebKit and spins a
+    /// nested main run loop.
     static func plainText(_ data: Data, type: NSAttributedString.DocumentType) -> String? {
         if type == .html {
-            // Zeilenumbrüche hinter Blockelementen erhalten, die stringValue sonst verschluckt.
+            // Keep line breaks after block elements, which stringValue would otherwise swallow.
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             let marked = html.replacingOccurrences(
                 of: "(<br\\s*/?>|</(p|div|li|tr|h[1-6]|blockquote|pre)>)", with: "$1\n",

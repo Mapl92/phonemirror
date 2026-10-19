@@ -13,9 +13,6 @@ Tested with an iPhone 15 on iOS 27.0.1, macOS 27.0.1 and Xcode 27.1:
 | Audio and clipboard | available |
 | Reconnect and DDI mount | automatic |
 
-> The app's menus are currently in German. Below, menu items are given in English with the German label in
-> parentheses.
-
 ## Requirements
 
 - iPhone with iOS 27, Developer Mode, and Settings › Developer › "Enable UI Automation" turned on.
@@ -51,8 +48,8 @@ open build/PhoneMirror.app --args -replay /tmp/test.h265
 | ⌘1 / ⌘2 / ⌘3 | Home Screen / App Switcher / Spotlight |
 | ⌘L, ⌘↑ / ⌘↓ | Lock, volume |
 | ⌘⌥T | Audio on/off |
-| Device (Gerät) › Share Clipboard (Zwischenablage teilen) | Mac ↔ iPhone clipboard sync on/off |
-| Device (Gerät) › Connection (Verbindung) | Native or pymobiledevice3 |
+| Device › Share Clipboard | Mac ↔ iPhone clipboard sync on/off |
+| Device › Connection | Native or pymobiledevice3 |
 | ⌘+ / ⌘− / ⌘0 | Window size; size and position are remembered |
 
 Edge gestures:
@@ -71,13 +68,13 @@ Clipboard:
 ## Agent control (MCP)
 
 PhoneMirror includes an MCP server that lets AI agents control the iPhone. It shares the window's connection, so you
-see live what the agent is doing. An "Agent steuert" (agent in control) badge and the touched spot are shown, and you can step in
-at any time.
+see live what the agent is doing. An "Agent in control" badge and the touched spot are shown, and you can step in at
+any time.
 
 - Address: `http://127.0.0.1:8765/mcp` (Streamable HTTP, local only), protected by a bearer token and an Origin check.
-- Turn on/off: Device (Gerät) › Agent Control (Agent-Steuerung (MCP)).
-- **Adding it to Claude Code:** Device (Gerät) › "Copy MCP command for Claude Code" (MCP-Befehl für Claude Code
-  kopieren) puts the complete command on the Mac clipboard (not the iPhone's). Paste it into a terminal and run it:
+- Turn on/off: Device › Agent Control (MCP).
+- **Adding it to Claude Code:** Device › Copy MCP Command for Claude Code puts the complete command on the Mac
+  clipboard (not the iPhone's). Paste it into a terminal and run it:
 
   ```
   claude mcp add --transport http phonemirror http://127.0.0.1:8765/mcp --header "Authorization: Bearer <token>"
@@ -172,4 +169,3 @@ in the [main README](../README.md).
   read; fetching all representations blocks the iOS service (≥ 8 s, up to 64 s according to pymobiledevice3).
 - **Probe tool:** Don't run `native-probe` while the app is running. The second RSD connection disrupts the app's
   streams; the app reconnects, but the measurements are skewed.
-- **UI language:** Menus and in-app text are German only so far.

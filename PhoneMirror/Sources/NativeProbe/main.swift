@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Prüft den nativen Transport Schicht für Schicht am echten iPhone.
-// Aufruf: native-probe tunnel | rsd | video [sekunden] | audio [sekunden]
+// Tests the native transport layer by layer against a real iPhone.
+// Usage: native-probe tunnel | rsd | video [seconds] | audio [seconds]
 import Foundation
 import MirrorCore
 import MirrorNative
@@ -13,14 +13,14 @@ do {
         let tunnel = RemotePairingTunnel()
         let address = try tunnel.open()
         print("Tunnel: [\(address)] udid=\(tunnel.udid ?? "?")")
-        print("RSD-Ports von remoted: \(RSDLocator.candidatePorts(tunnelAddress: address))")
-        print("remoted-UUID: \(RSDLocator.remotedUUID()?.uuidString ?? "unbekannt")")
+        print("RSD ports from remoted: \(RSDLocator.candidatePorts(tunnelAddress: address))")
+        print("remoted UUID: \(RSDLocator.remotedUUID()?.uuidString ?? "unknown")")
         tunnel.close()
     case "rsd":
         let rsd = try await RemoteServiceDiscovery.connect()
         let properties = rsd.properties
-        print("Gerät: \(properties["ProductType"]?.stringValue ?? "?") iOS \(properties["OSVersion"]?.stringValue ?? "?")")
-        print("\(rsd.services.count) Dienste")
+        print("Device: \(properties["ProductType"]?.stringValue ?? "?") iOS \(properties["OSVersion"]?.stringValue ?? "?")")
+        print("\(rsd.services.count) services")
         for name in rsd.services.keys.sorted() where name.contains("display") || name.contains("hid") || name.contains("pasteboard") || name.contains("devicecontrol") {
             print("  \(name) → Port \(rsd.port(of: name).map(String.init) ?? "?")")
         }
@@ -36,7 +36,7 @@ do {
         let localIP = connection.localAddress ?? "?"
         let kind: DisplayService.Kind = command == "video" ? .video : .audio
         let answer = try await display.startStream(kind, receiverIP: localIP, receiverPort: receiver.port, senderIP: rsd.address, sessionID: UUID())
-        print("Stream gestartet: lokal [\(localIP)]:\(receiver.port), Gerät-Port \(answer.sourcePort), SSRC \(answer.deviceSSRC)/\(answer.ourSSRC)")
+        print("Stream started: local [\(localIP)]:\(receiver.port), device port \(answer.sourcePort), SSRC \(answer.deviceSSRC)/\(answer.ourSSRC)")
         let stats = ProbeStats()
         let decoder = kind == .audio ? try AACELDDecoder() : nil
         receiver.start(deviceAddress: rsd.address, answer: answer) { packet in
@@ -60,21 +60,21 @@ do {
             "includeDefaultApps": true, "requireContainerAccess": false, "includeAppGroupIdentifiers": false, "includeContainerPaths": false,
         ])
         connection.close()
-        print("\(raw.count) Apps; Felder: \(raw.first?.entries?.map(\.key).sorted().joined(separator: ", ") ?? "-")")
+        print("\(raw.count) apps; fields: \(raw.first?.entries?.map(\.key).sorted().joined(separator: ", ") ?? "-")")
         let settings = raw.first { $0["bundleIdentifier"]?.stringValue == "com.apple.Preferences" }
-        print("Einstellungen: \(settings.map { describeStructure($0, indent: 1) } ?? "nicht gefunden")")
+        print("Settings: \(settings.map { describeStructure($0, indent: 1) } ?? "not found")")
         if CommandLine.arguments.dropFirst(2).first == "launch" {
             let launcher = try await rsd.connect(service: AppService.name)
             try await AppService(connection: launcher).launch(bundleID: "com.apple.Preferences")
             launcher.close()
-            print("Einstellungen gestartet")
+            print("Settings launched")
         }
     case "clipboard":
-        // Nur Struktur ausgeben (Schlüssel, Typen, Längen) – keine Inhalte.
+        // Print only the structure (keys, types, lengths) – no contents.
         let rsd = try await RemoteServiceDiscovery.connect()
         defer { rsd.close() }
         if CommandLine.arguments.dropFirst(2).first == "set-rich" {
-            // Wie eine Safari-Kopie: HTML als primärer Typ, Text nur als Nebentyp.
+            // Like a Safari copy: HTML as the primary type, text only as a secondary type.
             let text = CommandLine.arguments.dropFirst(3).first ?? "PhoneMirror Rich"
             let connection = try await rsd.connect(service: PasteboardService.name)
             let html = XPCValue.data(Data("<b>\(text)</b>".utf8)), plain = XPCValue.data(Data(text.utf8))
@@ -85,12 +85,12 @@ do {
                 "sourceMetadata": .null,
             ])
             connection.close()
-            print("Rich-Testtext gesetzt")
+            print("Rich test text set")
         }
         if CommandLine.arguments.dropFirst(2).first == "set" {
             let setter = PasteboardService { try await rsd.connect(service: PasteboardService.name) }
             try await setter.set(.text(CommandLine.arguments.dropFirst(3).first ?? "PhoneMirror Test"))
-            print("Testtext gesetzt")
+            print("Test text set")
         }
         for policy in ["allPromised", "promiseSecondary"] {
             let connection = try await rsd.connect(service: PasteboardService.name)
@@ -106,17 +106,17 @@ do {
         let pasteboard = PasteboardService { try await rsd.connect(service: PasteboardService.name) }
         print("changeID: \(String(describing: try await pasteboard.changeID()))")
         switch try await pasteboard.content() {
-        case .text(let text): print("content: Text, \(text.count) Zeichen")
-        case .png(let png): print("content: PNG, \(png.count) Bytes")
-        case .html(let html): print("content: HTML, \(html.count) Bytes")
-        case .rtf(let rtf): print("content: RTF, \(rtf.count) Bytes")
+        case .text(let text): print("content: Text, \(text.count) characters")
+        case .png(let png): print("content: PNG, \(png.count) bytes")
+        case .html(let html): print("content: HTML, \(html.count) bytes")
+        case .rtf(let rtf): print("content: RTF, \(rtf.count) bytes")
         case nil: print("content: nil")
         }
     default:
-        print("Unbekannter Befehl \(command)")
+        print("Unknown command \(command)")
     }
 } catch {
-    print("FEHLER: \(error.localizedDescription)")
+    print("ERROR: \(error.localizedDescription)")
     exit(1)
 }
 
@@ -148,9 +148,9 @@ final class ProbeStats: @unchecked Sendable {
     func summary(kind: DisplayService.Kind, seconds: Double) -> String {
         lock.lock(); defer { lock.unlock() }
         if kind == .audio {
-            return "Ton: \(packets) Pakete, \(errors) Fehler, \(String(format: "%.1f", Double(pcmBytes) / 4 / 48_000)) s PCM in \(seconds) s"
+            return "Audio: \(packets) packets, \(errors) errors, \(String(format: "%.1f", Double(pcmBytes) / 4 / 48_000)) s PCM in \(seconds) s"
         }
-        return "Video: \(packets) RTP-Pakete → \(frames) Bilder (\(keyframes) Keyframes, \(depacketizer.droppedFrames) verworfen), \(size), ≈ \(String(format: "%.1f", Double(frames) / seconds)) fps"
+        return "Video: \(packets) RTP packets → \(frames) frames (\(keyframes) keyframes, \(depacketizer.droppedFrames) dropped), \(size), ≈ \(String(format: "%.1f", Double(frames) / seconds)) fps"
     }
 }
 

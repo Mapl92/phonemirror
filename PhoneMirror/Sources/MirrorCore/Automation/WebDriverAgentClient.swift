@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// HTTP-Client für WebDriverAgent auf dem iPhone (über die CoreDevice-Tunnel-Adresse).
-/// Genutzt wird nur das Lesen des Accessibility-Baums – getippt wird über PhoneMirrors eigenen HID-Weg.
+/// HTTP client for WebDriverAgent on the iPhone (via the CoreDevice tunnel address).
+/// Only reading the accessibility tree is used – taps go through PhoneMirror's own HID path.
 public struct WebDriverAgentClient: Sendable {
     public var baseURL: URL
 
@@ -21,7 +21,7 @@ public struct WebDriverAgentClient: Sendable {
         return Status(ready: value["ready"] as? Bool ?? false, osVersion: (value["os"] as? [String: Any])?["version"] as? String)
     }
 
-    /// Baum der App im Vordergrund (inkl. SpringBoard/Homescreen).
+    /// Tree of the foreground app (incl. SpringBoard/home screen).
     public func source(timeout: Double = 30) async throws -> UIElement {
         let value = try await get("/source?format=json", timeout: timeout)
         guard let root = UIElement(wdaJSON: value) else { throw URLError(.cannotParseResponse) }

@@ -3,9 +3,9 @@ import Foundation
 import MirrorCore
 import os
 
-/// Startet und überwacht WebDriverAgent auf dem iPhone (`xcodebuild test-without-building`).
-/// WDA wird an die Tunnel-Adresse gebunden (`USE_IP`) und ist damit nur über den CoreDevice-Tunnel
-/// dieses Macs erreichbar, nicht im WLAN. Wechselt der Tunnel, wird neu gestartet.
+/// Starts and monitors WebDriverAgent on the iPhone (`xcodebuild test-without-building`).
+/// WDA is bound to the tunnel address (`USE_IP`) and is therefore only reachable through this Mac's
+/// CoreDevice tunnel, not over Wi-Fi. If the tunnel changes, it is restarted.
 @MainActor
 final class WDARunner {
     enum State: Equatable {
@@ -22,9 +22,9 @@ final class WDARunner {
     private static let logger = Logger(subsystem: "PhoneMirror", category: "wda")
     static let port: UInt16 = 8100
 
-    /// Standardort der mit `Scripts/build-wda.sh` gebauten Testlauf-Beschreibung. Bewusst nicht unter
-    /// ~/Documents: Dort fragt macOS die (ad-hoc signierte) App bei jedem Neubau nach Ordnerzugriff und
-    /// blockiert solange den Zugriff.
+    /// Default location of the test run description built with `Scripts/build-wda.sh`. Deliberately not under
+    /// ~/Documents: there macOS asks the (ad-hoc signed) app for folder access on every rebuild and
+    /// blocks access until then.
     static var defaultProductsDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PhoneMirror/WDA/wda-build/Build/Products")
@@ -41,14 +41,14 @@ final class WDARunner {
 
     var statusDescription: String {
         switch state {
-        case .stopped: "gestoppt"
-        case .starting(let address): "startet ([\(address)]:\(Self.port))"
-        case .ready(let address): "bereit ([\(address)]:\(Self.port))"
-        case .failed(let reason): "Fehler: \(reason)"
+        case .stopped: "stopped"
+        case .starting(let address): "starting ([\(address)]:\(Self.port))"
+        case .ready(let address): "ready ([\(address)]:\(Self.port))"
+        case .failed(let reason): "error: \(reason)"
         }
     }
 
-    /// Liefert einen einsatzbereiten Client; startet WDA bei Bedarf (erster Start ≈ 20–40 s).
+    /// Returns a ready-to-use client; starts WDA if needed (first start ≈ 20–40 s).
     func client(for endpoint: DeviceEndpoint) async throws -> WebDriverAgentClient {
         if let startTask, self.endpoint == endpoint { return try await startTask.value }
         let client = WebDriverAgentClient(host: endpoint.tunnelAddress, port: Self.port)
@@ -67,14 +67,14 @@ final class WDARunner {
     }
 
     private func start(endpoint: DeviceEndpoint, client: WebDriverAgentClient) async throws -> WebDriverAgentClient {
-        // Läuft schon ein passend gebundenes WDA (z. B. nach App-Neustart)? Dann übernehmen.
+        // Is a suitably bound WDA already running (e.g. after an app restart)? Then take it over.
         if (try? await client.status(timeout: 2))?.ready == true {
             state = .ready(endpoint.tunnelAddress)
             return client
         }
         guard let xctestrun = Self.findXCTestRun() else {
-            state = .failed("WebDriverAgent nicht gebaut")
-            throw AgentError("WebDriverAgent ist nicht gebaut. Einmalig ausführen: PhoneMirror/Scripts/build-wda.sh <Team-ID>")
+            state = .failed("WebDriverAgent not built")
+            throw AgentError("WebDriverAgent is not built. Run once: PhoneMirror/Scripts/build-wda.sh <Team-ID>")
         }
         state = .starting(endpoint.tunnelAddress)
         let logURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/PhoneMirror/wda.log")
@@ -86,7 +86,7 @@ final class WDARunner {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = ["xcodebuild", "test-without-building", "-xctestrun", xctestrun.path, "-destination", "id=\(endpoint.udid)"]
         var environment = ProcessInfo.processInfo.environment
-        // TEST_RUNNER_-Variablen reicht xcodebuild ohne Präfix an den Test-Runner weiter.
+        // xcodebuild passes TEST_RUNNER_ variables on to the test runner without the prefix.
         environment["TEST_RUNNER_USE_IP"] = endpoint.tunnelAddress
         environment["TEST_RUNNER_USE_PORT"] = String(Self.port)
         process.environment = environment
@@ -95,35 +95,35 @@ final class WDARunner {
         process.terminationHandler = { [weak self] process in
             Task { @MainActor in
                 guard let self, self.process === process else { return }
-                Self.logger.notice("WebDriverAgent beendet (Status \(process.terminationStatus))")
+                Self.logger.notice("WebDriverAgent exited (status \(process.terminationStatus))")
                 self.process = nil
-                self.state = .failed("beendet (Status \(process.terminationStatus))")
+                self.state = .failed("exited (status \(process.terminationStatus))")
             }
         }
         try process.run()
         self.process = process
-        Self.logger.notice("WebDriverAgent startet: [\(endpoint.tunnelAddress, privacy: .public)]:\(Self.port)")
+        Self.logger.notice("WebDriverAgent starting: [\(endpoint.tunnelAddress, privacy: .public)]:\(Self.port)")
 
         let deadline = Date().addingTimeInterval(120)
         while Date() < deadline {
             try await Task.sleep(for: .seconds(1))
             guard self.process === process, process.isRunning else {
-                throw AgentError("WebDriverAgent wurde beendet – Details in ~/Library/Logs/PhoneMirror/wda.log")
+                throw AgentError("WebDriverAgent exited – details in ~/Library/Logs/PhoneMirror/wda.log")
             }
             if (try? await client.status(timeout: 2))?.ready == true {
                 state = .ready(endpoint.tunnelAddress)
-                Self.logger.notice("WebDriverAgent bereit")
+                Self.logger.notice("WebDriverAgent ready")
                 return client
             }
         }
         stop()
-        state = .failed("Zeitüberschreitung beim Start")
-        throw AgentError("WebDriverAgent ist nicht rechtzeitig gestartet – Details in ~/Library/Logs/PhoneMirror/wda.log")
+        state = .failed("timed out while starting")
+        throw AgentError("WebDriverAgent did not start in time – details in ~/Library/Logs/PhoneMirror/wda.log")
     }
 
     func stop() {
         if let process, process.isRunning {
-            process.interrupt() // xcodebuild beendet den Testlauf und damit WDA auf dem iPhone
+            process.interrupt() // xcodebuild ends the test run and with it WDA on the iPhone
         }
         process = nil
         state = .stopped

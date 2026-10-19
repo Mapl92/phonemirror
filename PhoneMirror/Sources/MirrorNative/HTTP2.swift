@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// Minimale HTTP/2-Rahmen für RemoteXPC (keine Header-Kompression nötig: RemoteXPC schickt leere HEADERS).
+/// Minimal HTTP/2 frames for RemoteXPC (no header compression needed: RemoteXPC sends empty HEADERS).
 public struct HTTP2Frame: Equatable, Sendable {
     public enum Kind: UInt8, Sendable {
         case data = 0, headers = 1, priority = 2, rstStream = 3, settings = 4
@@ -46,7 +46,7 @@ public struct HTTP2Frame: Equatable, Sendable {
         return out
     }
 
-    /// Länge des Payloads aus einem 9-Byte-Header.
+    /// Payload length from a 9-byte header.
     static func payloadLength(header: Data) -> Int {
         let b = [UInt8](header.prefix(3))
         return Int(b[0]) << 16 | Int(b[1]) << 8 | Int(b[2])
@@ -61,7 +61,7 @@ public struct HTTP2Frame: Equatable, Sendable {
         return frame
     }
 
-    // MARK: Bausteine
+    // MARK: Building blocks
 
     public static func settings(_ values: [(UInt16, UInt32)], ack: Bool = false) -> HTTP2Frame {
         var payload = ByteWriter()
@@ -78,7 +78,7 @@ public struct HTTP2Frame: Equatable, Sendable {
         return HTTP2Frame(.windowUpdate, streamID: streamID, payload: payload.data)
     }
 
-    /// SETTINGS als (ID, Wert)-Paare.
+    /// SETTINGS as (ID, value) pairs.
     public var settingsValues: [(UInt16, UInt32)] {
         let b = [UInt8](payload)
         return stride(from: 0, to: b.count - 5, by: 6).map { i in

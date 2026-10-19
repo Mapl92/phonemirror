@@ -10,19 +10,19 @@ public enum ServeWebTransportError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .executableNotFound(let candidates):
-            "pymobiledevice3 nicht gefunden (gesucht: \(candidates.joined(separator: ", ")))."
+            "pymobiledevice3 not found (searched: \(candidates.joined(separator: ", ")))."
         case .processExited(let status, let output):
-            "pymobiledevice3 wurde beendet (Status \(status)).\n\(output)"
+            "pymobiledevice3 exited (status \(status)).\n\(output)"
         case .notReady(let reason):
-            "Der Stream ist nicht bereit: \(reason)"
+            "The stream is not ready: \(reason)"
         }
     }
 }
 
-/// Live-Verbindung über pymobiledevice3 `serve-web` als lokale Brücke:
-/// Der Prozess hält Tunnel, RTCP, Keyframe-Wiederanlauf und HID-Dienste;
-/// PhoneMirror liest `/stream.bin` und sendet Eingaben an `/touch`, `/key`, `/button`.
-/// Der Tunnel nutzt `--native` (bestehende Kopplung über Apples `remotepairingd`, kein Root).
+/// Live connection via pymobiledevice3 `serve-web` as a local bridge:
+/// the process maintains the tunnel, RTCP, keyframe recovery and HID services;
+/// PhoneMirror reads `/stream.bin` and sends input to `/touch`, `/key`, `/button`.
+/// The tunnel uses `--native` (existing pairing via Apple's `remotepairingd`, no root).
 public struct ServeWebTransport: MirrorTransport {
     public var executable: URL?
     public var screen: DeviceScreen
@@ -120,16 +120,16 @@ public actor ServeWebSession: MirrorSession {
         let continuation = continuation
         process.terminationHandler = { process in
             let tail = output.tail
-            Self.logger.notice("serve-web beendet: \(process.terminationStatus) \(tail, privacy: .public)")
-            continuation.yield(.disconnected(reason: "pymobiledevice3 beendet (Status \(process.terminationStatus))\n\(tail)"))
+            Self.logger.notice("serve-web exited: \(process.terminationStatus) \(tail, privacy: .public)")
+            continuation.yield(.disconnected(reason: "pymobiledevice3 exited (status \(process.terminationStatus))\n\(tail)"))
             continuation.finish()
         }
         try process.run()
-        Self.logger.notice("serve-web gestartet: \(self.baseURL.absoluteString, privacy: .public)")
+        Self.logger.notice("serve-web started: \(self.baseURL.absoluteString, privacy: .public)")
 
-        // /codec antwortet 200, sobald VPS/SPS/PPS und ein Keyframe da sind (startet den Gerätestream).
+        // /codec answers 200 as soon as VPS/SPS/PPS and a keyframe are there (starts the device stream).
         let deadline = Date().addingTimeInterval(45)
-        var lastStatus = "keine Antwort"
+        var lastStatus = "no response"
         while Date() < deadline {
             guard process.isRunning else {
                 throw ServeWebTransportError.processExited(status: process.terminationStatus, output: output.tail)
@@ -150,7 +150,7 @@ public actor ServeWebSession: MirrorSession {
         clipboardTask = Task { [weak self] in await self?.watchDeviceClipboard() }
     }
 
-    /// Long-Poll auf `/clipboard/events`: meldet, was auf dem Gerät kopiert wird.
+    /// Long poll on `/clipboard/events`: reports what is copied on the device.
     private func watchDeviceClipboard() async {
         var since: Int?
         var failures = 0
@@ -175,7 +175,7 @@ public actor ServeWebSession: MirrorSession {
             } catch {
                 failures += 1
                 if failures >= 5 {
-                    Self.logger.error("Zwischenablage-Abgleich beendet: \(error.localizedDescription, privacy: .public)")
+                    Self.logger.error("Clipboard sync ended: \(error.localizedDescription, privacy: .public)")
                     return
                 }
                 try? await Task.sleep(for: .seconds(2))
@@ -200,7 +200,7 @@ public actor ServeWebSession: MirrorSession {
         }
         let (_, response) = try await urlSession.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status != 200 { Self.logger.error("Zwischenablage setzen → HTTP \(status)") }
+        if status != 200 { Self.logger.error("Set clipboard → HTTP \(status)") }
     }
 
     public func clipboardContent() async throws -> ClipboardContent? {
@@ -251,7 +251,7 @@ public actor ServeWebSession: MirrorSession {
         }
     }
 
-    /// Mausräder liefern kein Gestenende: Finger nach kurzer Ruhe automatisch heben.
+    /// Mouse wheels deliver no gesture end: lift the finger automatically after a short idle period.
     private func scheduleScrollRelease() {
         scrollIdleTask?.cancel()
         scrollIdleTask = Task { [weak self] in
@@ -281,7 +281,7 @@ public actor ServeWebSession: MirrorSession {
         clipboardTask?.cancel()
         urlSession.invalidateAndCancel()
         if process.isRunning {
-            // SIGINT: serve-web beendet den Gerätestream sauber (stopmediastream) bevor es aussteigt.
+            // SIGINT: serve-web ends the device stream cleanly (stopmediastream) before it exits.
             process.interrupt()
             for _ in 0..<30 where process.isRunning {
                 try? await Task.sleep(for: .milliseconds(100))
@@ -311,8 +311,8 @@ public actor ServeWebSession: MirrorSession {
     }
 }
 
-/// Empfängt `/stream.bin` stückweise und liefert fertige Bilder an die Session.
-/// Läuft ausschließlich auf der seriellen Delegate-Queue der URLSession.
+/// Receives `/stream.bin` piece by piece and delivers complete frames to the session.
+/// Runs exclusively on the URLSession's serial delegate queue.
 private final class StreamReceiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private var parser = ServeWebStreamParser()
     private var audioParser = ServeWebAudioParser()
@@ -336,15 +336,15 @@ private final class StreamReceiver: NSObject, URLSessionDataDelegate, @unchecked
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
         guard task.originalRequest?.url?.path == "/stream.bin" else { return }
-        let reason = error.map { $0.localizedDescription } ?? "Stream beendet"
-        Self.logger.notice("/stream.bin beendet: \(reason, privacy: .public)")
+        let reason = error.map { $0.localizedDescription } ?? "Stream ended"
+        Self.logger.notice("/stream.bin ended: \(reason, privacy: .public)")
         if (error as? URLError)?.code != .cancelled {
             continuation.yield(.disconnected(reason: reason))
         }
     }
 }
 
-/// Sammelt die Ausgabe von pymobiledevice3 fürs Log und für Fehlermeldungen (letzte Zeilen).
+/// Collects pymobiledevice3's output for the log and for error messages (last lines).
 private final class ProcessOutput: @unchecked Sendable {
     private let lock = NSLock()
     private var lines: [String] = []

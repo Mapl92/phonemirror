@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// RemoteServiceDiscovery (RSD) über den nativen Tunnel, nach pymobiledevice3
+// RemoteServiceDiscovery (RSD) over the native tunnel, after pymobiledevice3
 // (remote/remote_service_discovery.py, native_tunnel.py; GPL-3.0-or-later).
 import Foundation
 import os
 
-/// Verbindung zum RSD des Geräts: liefert Geräte-Eigenschaften und die Ports der Dienste.
-/// Die RSD-Verbindung muss offen bleiben, solange Dienste genutzt werden.
+/// Connection to the device's RSD: provides device properties and the service ports.
+/// The RSD connection must stay open as long as services are in use.
 public final class RemoteServiceDiscovery: @unchecked Sendable {
     public let tunnel: RemotePairingTunnel
     public let address: String
@@ -18,8 +18,8 @@ public final class RemoteServiceDiscovery: @unchecked Sendable {
         self.address = address
     }
 
-    /// Tunnel öffnen und RSD-Handshake ausführen (mit Wiederholungen: Direkt nach dem Tunnelaufbau
-    /// setzt das Gerät die RSD-Verbindung gern zurück und `remoted` wählt einen neuen Port).
+    /// Open the tunnel and perform the RSD handshake (with retries: right after the tunnel is set up
+    /// the device likes to reset the RSD connection and `remoted` picks a new port).
     public static func connect(udid: String? = nil) async throws -> RemoteServiceDiscovery {
         let tunnel = RemotePairingTunnel()
         let address = try await Task.detached { try tunnel.open(udid: udid) }.value
@@ -35,7 +35,7 @@ public final class RemoteServiceDiscovery: @unchecked Sendable {
                     try await connection.sendDeviceHandshake(uuid: handshakeUUID)
                     rsd.peerInfo = try await withTimeout(seconds: 5, "RSD-Handshake") { try await connection.receiveResponse() }
                     rsd.control = connection
-                    logger.notice("RSD verbunden: [\(address, privacy: .public)]:\(port), \(rsd.services.count) Dienste")
+                    logger.notice("RSD connected: [\(address, privacy: .public)]:\(port), \(rsd.services.count) services")
                     return rsd
                 } catch {
                     lastError = error
@@ -58,9 +58,9 @@ public final class RemoteServiceDiscovery: @unchecked Sendable {
         services[service]?["Port"]?.intValue.flatMap(UInt16.init(exactly:))
     }
 
-    /// Neue RemoteXPC-Verbindung zu einem Dienst (`UsesRemoteXPC`).
+    /// New RemoteXPC connection to a service (`UsesRemoteXPC`).
     public func connect(service: String) async throws -> RemoteXPCConnection {
-        guard let port = port(of: service) else { throw RemoteXPCError.protocolError("Dienst \(service) nicht verfügbar") }
+        guard let port = port(of: service) else { throw RemoteXPCError.protocolError("Service \(service) not available") }
         let connection = RemoteXPCConnection(host: address, port: port)
         try await connection.connect()
         return connection

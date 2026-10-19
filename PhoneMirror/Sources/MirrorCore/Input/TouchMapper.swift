@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CoreGraphics
 
-/// Rechnet Positionen im Mac-Fenster in normalisierte Gerätekoordinaten um und zurück.
-/// Das Video wird seitenverhältnistreu eingepasst (wie `AVLayerVideoGravity.resizeAspect`),
-/// Koordinaten der View haben den Ursprung oben links (geflippte NSView).
+/// Converts positions in the Mac window to normalized device coordinates and back.
+/// The video is fitted preserving aspect ratio (like `AVLayerVideoGravity.resizeAspect`);
+/// view coordinates have their origin at the top left (flipped NSView).
 public struct TouchMapper: Sendable, Equatable {
     public var contentSize: CGSize
     public var viewBounds: CGRect
@@ -13,7 +13,7 @@ public struct TouchMapper: Sendable, Equatable {
         self.viewBounds = viewBounds
     }
 
-    /// Fläche innerhalb der View, die das Video tatsächlich belegt.
+    /// Area within the view that the video actually occupies.
     public var videoRect: CGRect {
         guard contentSize.width > 0, contentSize.height > 0, viewBounds.width > 0, viewBounds.height > 0 else {
             return .zero
@@ -28,10 +28,10 @@ public struct TouchMapper: Sendable, Equatable {
         )
     }
 
-    /// Liefert `nil`, wenn der Punkt außerhalb des Videos liegt (z. B. Letterbox-Rand).
+    /// Returns `nil` if the point lies outside the video (e.g. letterbox margin).
     public func devicePoint(for viewPoint: CGPoint) -> TouchPoint? {
         let rect = videoRect
-        // Inklusiv prüfen: Der Mauszeiger kann genau auf der rechten/unteren Kante liegen.
+        // Check inclusively: the mouse pointer can lie exactly on the right/bottom edge.
         guard !rect.isEmpty,
               (rect.minX...rect.maxX).contains(viewPoint.x),
               (rect.minY...rect.maxY).contains(viewPoint.y)
@@ -39,8 +39,8 @@ public struct TouchMapper: Sendable, Equatable {
         return clampedDevicePoint(for: viewPoint)
     }
 
-    /// Wie `devicePoint(for:)`, klemmt aber auf den Videobereich – für laufende Gesten,
-    /// die über den Rand hinausgezogen werden.
+    /// Like `devicePoint(for:)`, but clamps to the video area – for ongoing gestures
+    /// that are dragged beyond the edge.
     public func clampedDevicePoint(for viewPoint: CGPoint) -> TouchPoint {
         let rect = videoRect
         guard !rect.isEmpty else { return TouchPoint(x: 0, y: 0) }
@@ -50,7 +50,7 @@ public struct TouchMapper: Sendable, Equatable {
         )
     }
 
-    /// Umkehrung: normalisierte Gerätekoordinate → Punkt in der View.
+    /// Inverse: normalized device coordinate → point in the view.
     public func viewPoint(for devicePoint: TouchPoint) -> CGPoint {
         let rect = videoRect
         let max = Double(TouchPoint.maxValue)

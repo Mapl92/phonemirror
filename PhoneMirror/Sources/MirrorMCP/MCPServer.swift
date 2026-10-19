@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// Ein Werkzeug, das Agents über MCP aufrufen können.
+/// A tool that agents can call via MCP.
 public struct MCPTool: Sendable {
     public var name: String
     public var description: String
-    /// JSON-Schema der Argumente.
+    /// JSON schema of the arguments.
     public var inputSchema: JSONValue
 
     public init(name: String, description: String, inputSchema: JSONValue) {
@@ -14,7 +14,7 @@ public struct MCPTool: Sendable {
         self.inputSchema = inputSchema
     }
 
-    /// Kurzform für Objekt-Schemata: `properties` und `required`.
+    /// Shorthand for object schemas: `properties` and `required`.
     public init(name: String, description: String, properties: [String: JSONValue] = [:], required: [String] = []) {
         self.init(name: name, description: description, inputSchema: [
             "type": "object",
@@ -24,7 +24,7 @@ public struct MCPTool: Sendable {
     }
 }
 
-/// Ergebnis eines Werkzeugaufrufs (MCP `CallToolResult`).
+/// Result of a tool call (MCP `CallToolResult`).
 public struct MCPToolResult: Sendable, Equatable {
     public enum Content: Sendable, Equatable {
         case text(String)
@@ -53,13 +53,13 @@ public struct MCPToolResult: Sendable, Equatable {
     }
 }
 
-/// Liefert die Werkzeuge und führt sie aus.
+/// Provides the tools and executes them.
 public protocol MCPToolProvider: Sendable {
     func tools() async -> [MCPTool]
     func call(_ name: String, arguments: JSONValue) async -> MCPToolResult
 }
 
-/// JSON-RPC-2.0-Dispatcher für das Model Context Protocol (Server-Seite, nur Tools).
+/// JSON-RPC 2.0 dispatcher for the Model Context Protocol (server side, tools only).
 public struct MCPServer: Sendable {
     public static let supportedProtocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
 
@@ -75,7 +75,7 @@ public struct MCPServer: Sendable {
         self.provider = provider
     }
 
-    /// Verarbeitet eine JSON-RPC-Nachricht. `nil` = Benachrichtigung ohne Antwort (HTTP 202).
+    /// Processes a JSON-RPC message. `nil` = notification without response (HTTP 202).
     public func handle(_ body: Data) async -> Data? {
         let message: JSONValue
         do {
@@ -84,11 +84,11 @@ public struct MCPServer: Sendable {
             return Self.error(id: .null, code: -32700, message: "Parse error").serialized()
         }
         guard case .object = message, let method = message["method"]?.stringValue else {
-            // Antworten des Clients auf Server-Anfragen (wir stellen keine) und Unbekanntes ignorieren.
+            // Ignore client responses to server requests (we don't make any) and anything unknown.
             if message["id"] != nil, message["result"] != nil || message["error"] != nil { return nil }
             return Self.error(id: message["id"] ?? .null, code: -32600, message: "Invalid Request").serialized()
         }
-        guard let id = message["id"] else { return nil } // Benachrichtigung (z. B. notifications/initialized)
+        guard let id = message["id"] else { return nil } // Notification (e.g. notifications/initialized)
         let params = message["params"] ?? [:]
 
         switch method {

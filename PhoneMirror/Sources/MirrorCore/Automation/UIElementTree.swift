@@ -2,8 +2,8 @@
 import CoreGraphics
 import Foundation
 
-/// Ein Bedienelement aus dem Accessibility-Baum (WebDriverAgent `/source?format=json`).
-/// Koordinaten in Bildschirmpunkten – derselbe Raum wie Screenshots und Touch-Werkzeuge.
+/// A UI element from the accessibility tree (WebDriverAgent `/source?format=json`).
+/// Coordinates in screen points – the same space as screenshots and touch tools.
 public struct UIElement: Sendable, Equatable {
     public var type: String
     public var label: String?
@@ -28,7 +28,7 @@ public struct UIElement: Sendable, Equatable {
         self.children = children
     }
 
-    /// Baut einen Knoten aus WDAs JSON (Booleans kommen als "1"/"0").
+    /// Builds a node from WDA's JSON (booleans arrive as "1"/"0").
     public init?(wdaJSON node: [String: Any]) {
         guard let type = node["type"] as? String else { return nil }
         func text(_ key: String) -> String? {
@@ -58,12 +58,12 @@ public struct UIElement: Sendable, Equatable {
         )
     }
 
-    /// Anzeigetext: Label, sonst Name, sonst Identifier.
+    /// Display text: label, otherwise name, otherwise identifier.
     public var title: String? { label ?? name ?? identifier }
     public var center: CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
 }
 
-/// Flache, nummerierte Sicht auf den Baum – so können Agents per ID auf Elemente zeigen.
+/// Flat, numbered view of the tree – lets agents point at elements by ID.
 public struct UIElementList: Sendable, Equatable {
     public struct Entry: Sendable, Equatable {
         public var id: Int
@@ -73,8 +73,8 @@ public struct UIElementList: Sendable, Equatable {
 
     public var entries: [Entry]
 
-    /// Container ohne eigene Beschriftung (Typ „Other“, Fenster, Gruppen) werden übersprungen, ihre Kinder
-    /// rücken auf. Unsichtbare oder flächenlose Elemente fallen weg, wenn `visibleOnly` gesetzt ist.
+    /// Containers without their own label (type “Other”, windows, groups) are skipped; their children
+    /// move up. Invisible or zero-area elements are dropped when `visibleOnly` is set.
     public init(root: UIElement, screen: CGRect, visibleOnly: Bool = true) {
         var entries: [Entry] = []
         func visit(_ element: UIElement, depth: Int) {
@@ -103,7 +103,7 @@ public struct UIElementList: Sendable, Equatable {
         entries.first { $0.id == id }?.element
     }
 
-    /// Sucht nach Text (Teilstring, ohne Groß/Klein) in Label, Name, Wert und Identifier, optional nach Typ.
+    /// Searches for text (substring, case-insensitive) in label, name, value and identifier, optionally by type.
     public func search(text: String?, type: String? = nil) -> [Entry] {
         let needle = text?.lowercased()
         return entries.filter { entry in
@@ -116,8 +116,8 @@ public struct UIElementList: Sendable, Equatable {
         }
     }
 
-    /// Bestes Ziel für „tippe auf X“: exakte Beschriftung vor Teiltreffer, aktive vor inaktiven,
-    /// bedienbare Elemente (Button, Cell, …) vor reinem Text, dann die kleinste Fläche.
+    /// Best target for “tap on X”: exact label before partial match, enabled before disabled,
+    /// operable elements (Button, Cell, …) before plain text, then the smallest area.
     public func bestMatch(text: String, type: String? = nil) -> Entry? {
         let lower = text.lowercased()
         return search(text: text, type: type).min { a, b in
@@ -131,7 +131,7 @@ public struct UIElementList: Sendable, Equatable {
         }
     }
 
-    /// Kompakte Textdarstellung, eine Zeile pro Element.
+    /// Compact text representation, one line per element.
     public func outline(limit: Int = 400) -> String {
         var lines = entries.prefix(limit).map { entry -> String in
             let e = entry.element
@@ -142,7 +142,7 @@ public struct UIElementList: Sendable, Equatable {
             line += " @(\(Int(e.rect.minX)),\(Int(e.rect.minY)) \(Int(e.rect.width))×\(Int(e.rect.height)))"
             return line
         }
-        if entries.count > limit { lines.append("… \(entries.count - limit) weitere Elemente") }
+        if entries.count > limit { lines.append("… \(entries.count - limit) more elements") }
         return lines.joined(separator: "\n")
     }
 }
@@ -150,7 +150,7 @@ public struct UIElementList: Sendable, Equatable {
 extension UIElementList {
     public static let textInputTypes: Set<String> = ["TextField", "SecureTextField", "SearchField", "TextView"]
 
-    /// Trefferliste wie im Outline-Format, ohne Einrückung.
+    /// Match list in the outline format, without indentation.
     public static func describe(_ entries: [Entry]) -> String {
         UIElementList(entries: entries.map { Entry(id: $0.id, depth: 0, element: $0.element) }).outline()
     }

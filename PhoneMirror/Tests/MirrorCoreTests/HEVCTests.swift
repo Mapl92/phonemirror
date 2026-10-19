@@ -24,8 +24,8 @@ import VideoToolbox
         let vps = HEVCNALUnit(Data([0x40, 0x01, 0]))
         let sps = HEVCNALUnit(Data([0x42, 0x01, 0]))
         let pps = HEVCNALUnit(Data([0x44, 0x01, 0]))
-        let idr = HEVCNALUnit(Data([0x26, 0x01, 0x80]))          // IDR_W_RADL, erster Slice
-        let trail = HEVCNALUnit(Data([0x02, 0x01, 0x80]))        // TRAIL_R, erster Slice
+        let idr = HEVCNALUnit(Data([0x26, 0x01, 0x80]))          // IDR_W_RADL, first slice
+        let trail = HEVCNALUnit(Data([0x02, 0x01, 0x80]))        // TRAIL_R, first slice
         let trailSecondSlice = HEVCNALUnit(Data([0x02, 0x01, 0x00]))
         let stream = AnnexB.join([vps, sps, pps, idr, trail, trailSecondSlice, trail])
         let units = HEVCAccessUnitAssembler.accessUnits(in: stream)
@@ -34,7 +34,7 @@ import VideoToolbox
 }
 
 @Suite struct HEVCPipelineTests {
-    /// Kleiner Stream: 2 Keyframe-Intervalle, damit Parameter-Sets wiederholt vorkommen.
+    /// Small stream: 2 keyframe intervals, so that parameter sets occur repeatedly.
     static let stream: Data = {
         (try? HEVCTestStreamEncoder.encode(width: 320, height: 640, frameCount: 20, framesPerSecond: 30, keyframeInterval: 10)) ?? Data()
     }()
@@ -52,7 +52,7 @@ import VideoToolbox
     @Test func builderWaitsForKeyframe() throws {
         let units = HEVCAccessUnitAssembler.accessUnits(in: Self.stream)
         var builder = HEVCSampleBuilder()
-        // Bild 1 ist kein Keyframe und kommt ohne Parameter-Sets: noch nichts anzeigbar.
+        // Frame 1 is not a keyframe and comes without parameter sets: nothing displayable yet.
         #expect(try builder.makeSample(from: VideoPacket(annexB: AnnexB.join(units[1]), timestamp: 0)) == nil)
         let output = try #require(try builder.makeSample(from: VideoPacket(annexB: AnnexB.join(units[0]), timestamp: 0)))
         #expect(output.isKeyframe)
@@ -61,7 +61,7 @@ import VideoToolbox
         #expect(dimensions.width == 320 && dimensions.height == 640)
     }
 
-    /// Ende-zu-Ende: Annex B → CMSampleBuffer → Hardware-Decoder → Pixelbuffer in richtiger Größe.
+    /// End to end: Annex B → CMSampleBuffer → hardware decoder → pixel buffer of the right size.
     @Test func samplesDecodeWithVideoToolbox() throws {
         var builder = HEVCSampleBuilder()
         let samples = try HEVCAccessUnitAssembler.accessUnits(in: Self.stream).enumerated().compactMap { index, unit in

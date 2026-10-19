@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// Geometrie des gespiegelten Gerätebildschirms.
+/// Geometry of the mirrored device screen.
 public struct DeviceScreen: Sendable, Equatable {
     public var pixelWidth: Int
     public var pixelHeight: Int
-    /// Pixel pro Punkt (iPhone 15: 3).
+    /// Pixels per point (iPhone 15: 3).
     public var scale: Double
-    /// Eckenradius des Displays in Punkten.
+    /// Corner radius of the display in points.
     public var cornerRadius: Double
 
     public init(pixelWidth: Int, pixelHeight: Int, scale: Double, cornerRadius: Double) {
@@ -25,13 +25,13 @@ public struct DeviceScreen: Sendable, Equatable {
     public static let iPhone15 = DeviceScreen(pixelWidth: 1179, pixelHeight: 2556, scale: 3, cornerRadius: 55)
 }
 
-/// Eine vollständige HEVC Access Unit im Annex-B-Format (Startcodes vor jeder NAL Unit).
-/// Parameter-Sets (VPS/SPS/PPS) stehen, falls vorhanden, vor den Slice-NALs.
+/// A complete HEVC access unit in Annex B format (start codes before every NAL unit).
+/// Parameter sets (VPS/SPS/PPS), if present, come before the slice NALs.
 public struct VideoPacket: Sendable, Equatable {
     public var annexB: Data
-    /// Präsentationszeit in Sekunden relativ zum Sessionstart.
+    /// Presentation time in seconds relative to the session start.
     public var timestamp: TimeInterval
-    /// Der Sender hat Bilder ausgelassen: Decoder vor diesem (Key-)Bild zurücksetzen.
+    /// The sender skipped frames: reset the decoder before this (key) frame.
     public var resetDecoder: Bool
 
     public init(annexB: Data, timestamp: TimeInterval, resetDecoder: Bool = false) {
@@ -41,7 +41,7 @@ public struct VideoPacket: Sendable, Equatable {
     }
 }
 
-/// Ton vom Gerät: interleaved Int16-PCM (Little Endian).
+/// Audio from the device: interleaved Int16 PCM (little endian).
 public struct AudioChunk: Sendable, Equatable {
     public var pcm: Data
     public var sampleRate: Double
@@ -54,27 +54,27 @@ public struct AudioChunk: Sendable, Equatable {
     }
 }
 
-/// Inhalt einer Zwischenablage.
+/// Contents of a clipboard.
 public enum ClipboardContent: Sendable, Equatable {
     case text(String)
     case png(Data)
-    /// Formatierter Text (z. B. aus Safari/Mail) – der Mac legt zusätzlich reinen Text daneben.
+    /// Formatted text (e.g. from Safari/Mail) – the Mac additionally puts plain text next to it.
     case html(Data)
-    /// Formatierter Text (z. B. aus Notizen/Pages).
+    /// Formatted text (e.g. from Notes/Pages).
     case rtf(Data)
 }
 
 public enum TransportEvent: Sendable, Equatable {
     case video(VideoPacket)
     case audio(AudioChunk)
-    /// Auf dem Gerät wurde etwas kopiert.
+    /// Something was copied on the device.
     case clipboard(ClipboardContent)
     case screenChanged(DeviceScreen)
-    /// Verbindung verloren; die App versucht es erneut.
+    /// Connection lost; the app tries again.
     case disconnected(reason: String?)
 }
 
-/// Eine auf dem Gerät installierte App.
+/// An app installed on the device.
 public struct InstalledApp: Sendable, Equatable {
     public var bundleID: String
     public var name: String
@@ -87,7 +87,7 @@ public struct InstalledApp: Sendable, Equatable {
     }
 }
 
-/// Wo das Gerät im CoreDevice-Tunnel erreichbar ist (für Dienste wie WebDriverAgent).
+/// Where the device is reachable in the CoreDevice tunnel (for services such as WebDriverAgent).
 public struct DeviceEndpoint: Sendable, Equatable {
     public var tunnelAddress: String
     public var udid: String
@@ -101,23 +101,23 @@ public struct DeviceEndpoint: Sendable, Equatable {
 public struct UnsupportedFeatureError: LocalizedError {
     public var feature: String
     public init(_ feature: String) { self.feature = feature }
-    public var errorDescription: String? { "\(feature) ist mit dieser Verbindungsart nicht verfügbar (nur „Nativ“)." }
+    public var errorDescription: String? { "\(feature) is not available with this connection type (only “Native”)." }
 }
 
-/// Eine laufende Verbindung zu einem Gerät: liefert Video, nimmt Eingaben entgegen.
+/// A running connection to a device: delivers video, accepts input.
 public protocol MirrorSession: AnyObject, Sendable {
     var screen: DeviceScreen { get }
     var events: AsyncStream<TransportEvent> { get }
     func send(_ event: InputEvent) async throws
-    /// Legt Inhalt in die Zwischenablage des Geräts.
+    /// Puts content into the device's clipboard.
     func setClipboard(_ content: ClipboardContent) async throws
-    /// Erzwingt ein frisches Keyframe (z. B. nach einem Wechsel der Videoauflösung).
+    /// Forces a fresh keyframe (e.g. after a change of video resolution).
     func requestKeyframe() async
-    /// Aktueller Inhalt der Zwischenablage des Geräts.
+    /// Current contents of the device's clipboard.
     func clipboardContent() async throws -> ClipboardContent?
     func installedApps() async throws -> [InstalledApp]
     func launchApp(bundleID: String) async throws
-    /// Tunnel-Adresse und UDID, sofern der Transport sie kennt.
+    /// Tunnel address and UDID, if the transport knows them.
     func deviceEndpoint() async -> DeviceEndpoint?
     func close() async
 }
@@ -126,16 +126,16 @@ public extension MirrorSession {
     func setClipboard(_ content: ClipboardContent) async throws {}
     func requestKeyframe() async {}
     func clipboardContent() async throws -> ClipboardContent? { nil }
-    func installedApps() async throws -> [InstalledApp] { throw UnsupportedFeatureError("Apps auflisten") }
-    func launchApp(bundleID: String) async throws { throw UnsupportedFeatureError("Apps starten") }
+    func installedApps() async throws -> [InstalledApp] { throw UnsupportedFeatureError("Listing apps") }
+    func launchApp(bundleID: String) async throws { throw UnsupportedFeatureError("Launching apps") }
     func deviceEndpoint() async -> DeviceEndpoint? { nil }
 }
 
-/// Baut Sessions auf. Implementierungen: `FileReplayTransport` (Testdatei),
-/// später der CoreDevice-Transport (`com.apple.coredevice.displayservice` + Universal HID).
+/// Sets up sessions. Implementations: `FileReplayTransport` (test file),
+/// later the CoreDevice transport (`com.apple.coredevice.displayservice` + Universal HID).
 public protocol MirrorTransport: Sendable {
     var displayName: String { get }
-    /// Vor jedem Verbindungsaufbau das Developer Disk Image sicherstellen (siehe `DevicePreparation`).
+    /// Ensure the Developer Disk Image before every connection attempt (see `DevicePreparation`).
     var requiresDevicePreparation: Bool { get }
     func connect() async throws -> any MirrorSession
 }

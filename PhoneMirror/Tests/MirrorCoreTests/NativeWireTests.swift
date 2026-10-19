@@ -6,7 +6,7 @@ import Testing
 @Suite struct XPCWireTests {
     @Test func roundTripsAllTypes() throws {
         let value: XPCValue = [
-            "string": "Hallo",
+            "string": "Hello",
             "bool": true,
             "int": .int64(-5),
             "uint": .uint64(0x0100_0000_0000_0006),
@@ -24,20 +24,20 @@ import Testing
         #expect(decoded.flags.contains(.dataPresent) && decoded.flags.contains(.wantingReply))
     }
 
-    /// Ausrichtung: Strings/Keys werden auf 4 Byte aufgefüllt, gemessen ab Wertbeginn.
+    /// Alignment: strings/keys are padded to 4 bytes, measured from the start of the value.
     @Test func stringPaddingMatchesWireLayout() {
         var writer = ByteWriter()
         XPCCodec.encode(.string("abc"), into: &writer)
-        // Typ (4) + Länge 4 (4) + "abc\0" (4) = 12 Bytes, keine Füllung nötig.
+        // Type (4) + length 4 (4) + "abc\0" (4) = 12 bytes, no padding needed.
         #expect(writer.data == Data([0x00, 0x90, 0, 0, 4, 0, 0, 0, 0x61, 0x62, 0x63, 0]))
         var writer2 = ByteWriter()
         XPCCodec.encode(.string("ab"), into: &writer2)
-        // Länge 3 → 4 + 3 = 7 → 1 Byte Füllung.
+        // Length 3 → 4 + 3 = 7 → 1 byte of padding.
         #expect(writer2.data.count == 4 + 4 + 3 + 1)
     }
 
     @Test func emptyHandshakeMessage() throws {
-        // Erste Nachricht des RemoteXPC-Handshakes: leeres Dictionary, Flags nur ALWAYS_SET, ID 0.
+        // First message of the RemoteXPC handshake: empty dictionary, flags only ALWAYS_SET, ID 0.
         let bytes = XPCWrapper.request([:], messageID: 0, wantingReply: false).encoded()
         #expect(bytes.prefix(8) == Data([0x92, 0x0B, 0xB0, 0x29, 0x01, 0, 0, 0]))
         let (decoded, _) = try XPCWrapper.decode(bytes)
@@ -68,8 +68,8 @@ import Testing
 }
 
 @Suite struct MediaStreamOfferTests {
-    /// Referenz-Mitschnitt einer Xcode-Sitzung (aus pymobiledevice3): Mit denselben Parametern muss der
-    /// Builder Byte für Byte dasselbe erzeugen.
+    /// Reference capture of an Xcode session (from pymobiledevice3): with the same parameters the
+    /// builder must produce the same output byte for byte.
     @Test func videoBlobMatchesXcodeCapture() {
         let captured = Data(hex: """
         080110012a7f088182bae90810001a3f087b120a0801100118c387032000120a0801100218c387032000120a080110011
@@ -101,7 +101,7 @@ import Testing
         let plist = try #require(try PropertyListSerialization.propertyList(from: offer, format: nil) as? [String: Any])
         #expect(plist["avcMediaStreamNegotiatorMode"] as? Int == 5)
         let blob = try #require(plist["avcMediaStreamNegotiatorMediaBlob"] as? Data)
-        #expect(blob.first == 0x78 && blob.dropFirst().first == 0xDA) // zlib-Header, Stufe 9
+        #expect(blob.first == 0x78 && blob.dropFirst().first == 0xDA) // zlib header, level 9
     }
 }
 
@@ -114,13 +114,13 @@ import Testing
     }
 
     @Test func plainTextCopy() {
-        let reply = snapshot(types: ["public.utf8-plain-text"], inline: ["public.utf8-plain-text": Data("Hallo".utf8)])
-        #expect(PasteboardService.extract(reply) == .text("Hallo"))
+        let reply = snapshot(types: ["public.utf8-plain-text"], inline: ["public.utf8-plain-text": Data("Hello".utf8)])
+        #expect(PasteboardService.extract(reply) == .text("Hello"))
     }
 
-    /// Wie Safari auf iOS 27: HTML ist primär (inline), Text und RTF sind nur versprochen.
+    /// As Safari on iOS 27: HTML is primary (inline), text and RTF are only promised.
     @Test func safariCopyComesAsHTML() {
-        let html = Data("<b>Hallo</b>".utf8)
+        let html = Data("<b>Hello</b>".utf8)
         let reply = snapshot(types: ["public.html", "public.utf8-plain-text", "public.rtf"], inline: ["public.html": html])
         #expect(PasteboardService.extract(reply) == .html(html))
     }

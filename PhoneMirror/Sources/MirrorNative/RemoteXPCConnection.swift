@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// RemoteXPC über HTTP/2, nachgebaut nach pymobiledevice3 (remote/remotexpc.py, GPL-3.0-or-later).
+// RemoteXPC over HTTP/2, recreated after pymobiledevice3 (remote/remotexpc.py, GPL-3.0-or-later).
 import Foundation
 import Network
 import os
@@ -12,15 +12,15 @@ public enum RemoteXPCError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .connectionFailed(let reason): "Verbindung fehlgeschlagen: \(reason)"
-        case .closed: "Verbindung geschlossen"
-        case .protocolError(let reason): "RemoteXPC-Protokollfehler: \(reason)"
-        case .timeout(let what): "Zeitüberschreitung: \(what)"
+        case .connectionFailed(let reason): "Connection failed: \(reason)"
+        case .closed: "Connection closed"
+        case .protocolError(let reason): "RemoteXPC protocol error: \(reason)"
+        case .timeout(let what): "Timed out: \(what)"
         }
     }
 }
 
-/// Eine TCP-Verbindung mit `async`-Lesen/Schreiben (Network.framework).
+/// A TCP connection with `async` reading/writing (Network.framework).
 final class TCPStream: @unchecked Sendable {
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "PhoneMirror.tcp")
@@ -64,7 +64,7 @@ final class TCPStream: @unchecked Sendable {
         }
     }
 
-    /// Liest genau `count` Bytes.
+    /// Reads exactly `count` bytes.
     func read(exactly count: Int) async throws -> Data {
         while buffer.count < count {
             let chunk: Data = try await withCheckedThrowingContinuation { continuation in
@@ -92,7 +92,7 @@ final class TCPStream: @unchecked Sendable {
     }
 }
 
-/// Client-Seite einer RemoteXPC-Verbindung (RSD oder ein einzelner Dienst).
+/// Client side of a RemoteXPC connection (RSD or a single service).
 public final class RemoteXPCConnection: @unchecked Sendable {
     static let rootChannel: UInt32 = 1
     static let replyChannel: UInt32 = 3
@@ -114,8 +114,8 @@ public final class RemoteXPCConnection: @unchecked Sendable {
         stream = TCPStream(host: host, port: port)
     }
 
-    /// TCP verbinden und den HTTP/2-/RemoteXPC-Handshake ausführen.
-    /// Die Rahmenreihenfolge entspricht devicectl (sonst lehnt das Gerät mit „missing version flags“ ab).
+    /// Connect via TCP and perform the HTTP/2/RemoteXPC handshake.
+    /// The frame order matches devicectl (otherwise the device rejects with “missing version flags”).
     public func connect() async throws {
         try await stream.open()
         try await stream.send(HTTP2Frame.preface)
@@ -131,16 +131,16 @@ public final class RemoteXPCConnection: @unchecked Sendable {
         try await send(HTTP2Frame(.data, streamID: Self.replyChannel, payload: XPCWrapper(flags: [.alwaysSet, .initHandshake]).encoded()))
         nextMessageID[Self.replyChannel, default: 0] += 1
 
-        // Bis zum SETTINGS des Geräts lesen, dann bestätigen.
+        // Read until the device's SETTINGS, then acknowledge.
         while true {
             let frame = try await withTimeout(seconds: 5, "HTTP/2-SETTINGS") { try await self.receiveFrame() }
             if frame.type == .settings, !frame.flags.contains(.ack) { break }
-            if frame.type == .goAway { throw RemoteXPCError.protocolError("GOAWAY im Handshake") }
+            if frame.type == .goAway { throw RemoteXPCError.protocolError("GOAWAY in handshake") }
         }
         try await send(.settings([], ack: true))
     }
 
-    /// RSD-Handshake: kündigt diesen Client als modernen RemoteXPC-Peer an.
+    /// RSD handshake: announces this client as a modern RemoteXPC peer.
     public func sendDeviceHandshake(uuid: UUID) async throws {
         try await sendRequest([
             "MessageType": "Handshake",
@@ -157,18 +157,18 @@ public final class RemoteXPCConnection: @unchecked Sendable {
     public func sendRequest(_ dictionary: XPCValue, wantingReply: Bool = false) async throws {
         let messageID = nextMessageID[Self.rootChannel, default: 0]
         let wrapper = XPCWrapper.request(dictionary, messageID: messageID, wantingReply: wantingReply).encoded()
-        // Große Nachrichten in Rahmen von höchstens 16 KiB (Standard-MAX_FRAME_SIZE) teilen.
+        // Split large messages into frames of at most 16 KiB (default MAX_FRAME_SIZE).
         var offset = 0
         while offset < wrapper.count {
             let end = min(offset + 16_384, wrapper.count)
             try await send(HTTP2Frame(.data, streamID: Self.rootChannel, payload: wrapper.subdata(in: offset..<end)))
             offset = end
         }
-        // Eigene IDs sind ungerade (Initiator); nur die leere Handshake-Nachricht hat 0.
+        // Our own IDs are odd (initiator); only the empty handshake message has 0.
         nextMessageID[Self.rootChannel] = (messageID + 1) | 1
     }
 
-    /// Nächste Antwort als Dictionary (leere Dictionaries werden übersprungen).
+    /// Next response as a dictionary (empty dictionaries are skipped).
     public func receiveResponse() async throws -> XPCValue {
         while true {
             let frame = try await receiveDataFrame()
@@ -198,12 +198,12 @@ public final class RemoteXPCConnection: @unchecked Sendable {
         stream.close()
     }
 
-    /// Eigene Adresse im Tunnel (Ziel für RTP vom Gerät).
+    /// Own address in the tunnel (destination for RTP from the device).
     public var localAddress: String? {
         stream.localAddress?.split(separator: "%").first.map(String.init)
     }
 
-    // MARK: Rahmen
+    // MARK: Frames
 
     private func send(_ frame: HTTP2Frame) async throws {
         try await stream.send(frame.encoded())
@@ -226,7 +226,7 @@ public final class RemoteXPCConnection: @unchecked Sendable {
             case .goAway:
                 throw RemoteXPCError.protocolError("GOAWAY")
             case .rstStream:
-                throw RemoteXPCError.protocolError("RST_STREAM auf Stream \(frame.streamID)")
+                throw RemoteXPCError.protocolError("RST_STREAM on stream \(frame.streamID)")
             case .ping where !frame.flags.contains(.ack):
                 try await send(HTTP2Frame(.ping, flags: .ack, streamID: 0, payload: frame.payload))
             default:
@@ -235,7 +235,7 @@ public final class RemoteXPCConnection: @unchecked Sendable {
         }
     }
 
-    /// Empfangsfenster nachfüllen, damit das Gerät weitersenden darf.
+    /// Refill the receive window so the device may keep sending.
     private func replenish(stream id: UInt32, by count: Int) async throws {
         let pending = pendingWindow[id, default: 0] + count
         guard pending >= Self.windowUpdateThreshold else {
@@ -248,7 +248,7 @@ public final class RemoteXPCConnection: @unchecked Sendable {
     }
 }
 
-/// Führt `body` mit Zeitlimit aus.
+/// Runs `body` with a time limit.
 func withTimeout<T: Sendable>(seconds: Double, _ what: String, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
         group.addTask { try await body() }

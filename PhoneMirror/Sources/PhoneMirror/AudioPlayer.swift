@@ -3,9 +3,9 @@ import AVFoundation
 import MirrorCore
 import os
 
-/// Spielt den Ton des iPhones ab (Int16-PCM → Float32) mit begrenzter Latenz:
-/// Liegt mehr als `maxQueuedSeconds` in der Warteschlange, werden neue Pakete verworfen,
-/// damit der Ton nicht hinter dem Bild herläuft.
+/// Plays the iPhone's audio (Int16 PCM → Float32) with bounded latency:
+/// if more than `maxQueuedSeconds` is queued, new packets are dropped
+/// so the audio doesn't lag behind the picture.
 final class AudioPlayer: @unchecked Sendable {
     var isEnabled = true {
         didSet { if !isEnabled { stop() } }
@@ -79,7 +79,7 @@ final class AudioPlayer: @unchecked Sendable {
             format = newFormat
             return newFormat
         } catch {
-            Self.logger.error("Audio konnte nicht starten: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Audio could not start: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }

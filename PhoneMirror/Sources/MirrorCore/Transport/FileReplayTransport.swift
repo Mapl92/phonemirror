@@ -2,8 +2,8 @@
 import Foundation
 import os
 
-/// Spielt eine Annex-B-HEVC-Datei in Echtzeit als Gerätestream ab (Endlosschleife).
-/// Eingaben werden nur protokolliert und als `receivedInputs` gezählt.
+/// Plays back an Annex B HEVC file in real time as a device stream (endless loop).
+/// Input is only logged and counted as `receivedInputs`.
 public struct FileReplayTransport: MirrorTransport {
     public var fileURL: URL
     public var screen: DeviceScreen
@@ -40,7 +40,7 @@ public final class FileReplaySession: MirrorSession {
 
         playback = Task {
             guard !accessUnits.isEmpty else {
-                continuation.yield(.disconnected(reason: "Datei enthält keine HEVC-Bilder"))
+                continuation.yield(.disconnected(reason: "File contains no HEVC frames"))
                 continuation.finish()
                 return
             }
@@ -66,8 +66,8 @@ public final class FileReplaySession: MirrorSession {
 
     public func send(_ event: InputEvent) async throws {
         inputLog.withLock { $0.append(event) }
-        // notice statt debug: landet im persistenten Log und lässt sich mit `log show` prüfen.
-        Self.logger.notice("Eingabe: \(String(describing: event), privacy: .public)")
+        // notice instead of debug: ends up in the persistent log and can be checked with `log show`.
+        Self.logger.notice("Input: \(String(describing: event), privacy: .public)")
     }
 
     public func close() async {

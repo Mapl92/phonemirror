@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-/// Normalisierte Touch-Koordinate wie beim Universal-HID-Dienst:
-/// (0, 0) oben links, (65535, 65535) unten rechts, unabhängig von der Auflösung.
+/// Normalized touch coordinate as used by the Universal HID service:
+/// (0, 0) top left, (65535, 65535) bottom right, independent of the resolution.
 public struct TouchPoint: Sendable, Equatable, CustomStringConvertible {
     public static let maxValue = UInt16.max
 
@@ -25,14 +25,14 @@ public enum HardwareButton: String, Sendable, CaseIterable {
 
 public enum InputEvent: Sendable, Equatable {
     case touch(TouchPhase, TouchPoint)
-    /// Scrollen als Fingerbewegung in Punkten (positiv = Finger nach rechts/unten, wie beim natürlichen Scrollen),
-    /// beginnend an der Zeigerposition. Wird auf dem iPhone als Wischgeste nachgebildet.
+    /// Scrolling as finger movement in points (positive = finger to the right/down, as with natural scrolling),
+    /// starting at the pointer position. Emulated on the iPhone as a swipe gesture.
     case scroll(dx: Double, dy: Double, at: TouchPoint)
-    /// Trackpad-Geste beendet (Finger gehoben) – die nachgebildete Wischgeste loslassen.
+    /// Trackpad gesture ended (finger lifted) – release the emulated swipe gesture.
     case scrollEnded
-    /// HID-Usage aus der Keyboard-Page (0x07).
+    /// HID usage from the keyboard page (0x07).
     case key(usage: UInt16, isDown: Bool)
     case button(HardwareButton, isDown: Bool)
-    /// Vorgefertigte Geste (z. B. App-Umschalter); der Transport spielt sie mit passendem Timing ab.
+    /// Predefined gesture (e.g. App Switcher); the transport plays it back with appropriate timing.
     case gesture(SystemGesture)
 }

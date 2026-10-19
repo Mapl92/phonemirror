@@ -13,9 +13,9 @@ public enum HEVCTestStreamError: Error {
     case missingParameterSet(OSStatus)
 }
 
-/// Erzeugt einen synthetischen HEVC-Stream im Annex-B-Format, der wie ein Gerätebildschirm aussieht:
-/// Bildnummer, Raster mit Eckmarken (zum Prüfen des Koordinaten-Mappings) und ein wandernder Kreis.
-/// Jede Access Unit mit IRAP-Bild beginnt mit VPS/SPS/PPS – wie bei einem Live-Stream.
+/// Generates a synthetic HEVC stream in Annex B format that looks like a device screen:
+/// frame number, grid with corner marks (for checking the coordinate mapping) and a moving circle.
+/// Every access unit with an IRAP picture starts with VPS/SPS/PPS – as in a live stream.
 public enum HEVCTestStreamEncoder {
     public static func encode(
         width: Int,
@@ -68,7 +68,7 @@ public enum HEVCTestStreamEncoder {
         return try output.result()
     }
 
-    /// Anteil, auf den ein „kollabiertes“ Bild verkleinert wird (Rest grau wie beim iOS-Encoder).
+    /// Fraction to which a “collapsed” frame is scaled down (the rest gray, as with the iOS encoder).
     public static let collapseScale = 0.7
 
     private static func makeFrame(index: Int, width: Int, height: Int, framesPerSecond: Int, collapsed: Bool) throws -> CVPixelBuffer {
@@ -89,13 +89,13 @@ public enum HEVCTestStreamEncoder {
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { throw HEVCTestStreamError.pixelBuffer(kCVReturnError) }
 
-        // CoreGraphics zählt y von unten; für "oben links" spiegeln wir das Koordinatensystem.
+        // CoreGraphics counts y from the bottom; for "top left" we flip the coordinate system.
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
 
         if collapsed {
-            // Resolution Collapse nachstellen: grauer Grund, Inhalt verkleinert in der linken oberen Ecke.
-            // Direkt im Gerätefarbraum setzen – CGColor(gray:) würde farbmanagt zu ≈ 146 umgerechnet.
+            // Simulate resolution collapse: gray background, content scaled down in the top left corner.
+            // Set directly in the device color space – CGColor(gray:) would be color-managed to ≈ 146.
             context.setFillColor(red: 128.0 / 255, green: 128.0 / 255, blue: 128.0 / 255, alpha: 1)
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
             context.clip(to: CGRect(x: 0, y: 0, width: Double(width) * collapseScale, height: Double(height) * collapseScale))
@@ -107,7 +107,7 @@ public enum HEVCTestStreamEncoder {
         context.setFillColor(CGColor(gray: 0.08, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: w, height: h))
 
-        // Raster in Zehnteln der Fläche – entspricht Schritten von 6553,5 in Gerätekoordinaten.
+        // Grid in tenths of the area – corresponds to steps of 6553.5 in device coordinates.
         context.setStrokeColor(CGColor(gray: 0.3, alpha: 1))
         context.setLineWidth(2)
         for step in 1..<10 {
@@ -115,7 +115,7 @@ public enum HEVCTestStreamEncoder {
             context.strokeLineSegments(between: [CGPoint(x: x, y: 0), CGPoint(x: x, y: h), CGPoint(x: 0, y: y), CGPoint(x: w, y: y)])
         }
 
-        // Eckmarken: oben links rot, oben rechts grün, unten links blau, unten rechts gelb.
+        // Corner marks: top left red, top right green, bottom left blue, bottom right yellow.
         let marker = w * 0.08
         let corners: [(CGRect, CGColor)] = [
             (CGRect(x: 0, y: 0, width: marker, height: marker), CGColor(red: 1, green: 0.2, blue: 0.2, alpha: 1)),
@@ -128,7 +128,7 @@ public enum HEVCTestStreamEncoder {
             context.fill(rect)
         }
 
-        // Wandernder Kreis zeigt, dass das Bild läuft.
+        // Moving circle shows that the picture is running.
         let phase = CGFloat(index) / CGFloat(framesPerSecond * 4) * 2 * .pi
         let radius = w * 0.1
         let center = CGPoint(x: w / 2 + cos(phase) * w * 0.3, y: h / 2 + sin(phase) * h * 0.3)
@@ -148,7 +148,7 @@ public enum HEVCTestStreamEncoder {
         ] as CFDictionary
         let line = CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, text as CFString, attributes))
         context.saveGState()
-        // Text wieder aufrecht zeichnen (Kontext ist gespiegelt).
+        // Draw text upright again (the context is flipped).
         context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         context.textPosition = origin
         CTLineDraw(line, context)
@@ -156,7 +156,7 @@ public enum HEVCTestStreamEncoder {
     }
 }
 
-/// Sammelt die Encoder-Ausgabe threadsicher und wandelt sie in Annex B.
+/// Collects the encoder output thread-safely and converts it to Annex B.
 private final class EncodedOutput: @unchecked Sendable {
     private let lock = NSLock()
     private var stream = Data()

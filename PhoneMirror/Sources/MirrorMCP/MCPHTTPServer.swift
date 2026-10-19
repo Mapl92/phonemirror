@@ -3,8 +3,8 @@ import Foundation
 import Network
 import os
 
-/// Minimaler HTTP/1.1-Server für MCP „Streamable HTTP“: `POST /mcp` mit JSON-RPC, Antwort als JSON.
-/// Lauscht nur auf 127.0.0.1, verlangt ein Bearer-Token und lehnt fremde `Origin`s ab (DNS-Rebinding).
+/// Minimal HTTP/1.1 server for MCP “Streamable HTTP”: `POST /mcp` with JSON-RPC, response as JSON.
+/// Listens only on 127.0.0.1, requires a bearer token and rejects foreign `Origin`s (DNS rebinding).
 public final class MCPHTTPServer: @unchecked Sendable {
     public let port: UInt16
     private let token: String
@@ -12,7 +12,7 @@ public final class MCPHTTPServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "PhoneMirror.mcp")
     private static let logger = Logger(subsystem: "PhoneMirror", category: "mcp")
-    /// Wird bei jedem angenommenen Werkzeugaufruf gemeldet (für den Hinweis im Fenster).
+    /// Reported on every accepted tool call (for the indicator in the window).
     public var onRequest: (@Sendable () -> Void)?
 
     public init(port: UInt16, token: String, server: MCPServer) throws {
@@ -33,18 +33,18 @@ public final class MCPHTTPServer: @unchecked Sendable {
         }
         listener.stateUpdateHandler = { state in
             if case .failed(let error) = state {
-                Self.logger.error("MCP-Server: \(error.localizedDescription, privacy: .public)")
+                Self.logger.error("MCP server: \(error.localizedDescription, privacy: .public)")
             }
         }
         listener.start(queue: queue)
-        Self.logger.notice("MCP-Server lauscht auf http://127.0.0.1:\(self.port)/mcp")
+        Self.logger.notice("MCP server listening on http://127.0.0.1:\(self.port)/mcp")
     }
 
     public func stop() {
         listener.cancel()
     }
 
-    /// Liest Anfragen (Keep-Alive) und beantwortet sie nacheinander.
+    /// Reads requests (keep-alive) and answers them one after another.
     private func receive(on connection: NWConnection, buffer: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [weak self] data, _, isComplete, error in
             guard let self else { return }
@@ -86,7 +86,7 @@ public final class MCPHTTPServer: @unchecked Sendable {
         case "DELETE":
             return HTTPResponse(status: 200, body: Data())
         default:
-            // Kein serverseitiger SSE-Stream – laut Spezifikation mit 405 ablehnen.
+            // No server-side SSE stream – reject with 405 per the specification.
             return HTTPResponse(status: 405, body: Data(), extraHeaders: ["Allow": "POST, DELETE"])
         }
     }

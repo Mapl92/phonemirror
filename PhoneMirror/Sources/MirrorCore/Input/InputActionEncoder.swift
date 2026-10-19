@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-/// Was beim Gerät ankommen soll – unabhängig davon, ob serve-web oder der native Transport es überträgt.
+/// What should arrive at the device – regardless of whether serve-web or the native transport delivers it.
 public enum DeviceAction: Sendable, Equatable {
-    /// Touchscreen-Sample: `contact` = Finger liegt auf, sonst loslassen.
+    /// Touchscreen sample: `contact` = finger is down, otherwise release.
     case touch(contact: Bool, TouchPoint)
-    /// Vollständige Menge gedrückter HID-Keyboard-Usages.
+    /// Complete set of pressed HID keyboard usages.
     case keys([UInt16])
-    /// Hardwaretaste; `nil` = drücken und passend lange halten.
+    /// Hardware button; `nil` = press and hold for the appropriate time.
     case button(HardwareButton, ButtonAction?)
 }
 
-/// Übersetzt `InputEvent`s in `DeviceAction`s und hält den nötigen Zustand:
-/// die Menge gedrückter Tasten und eine laufende, als Wischgeste nachgebildete Scroll-Bewegung.
+/// Translates `InputEvent`s into `DeviceAction`s and keeps the necessary state:
+/// the set of pressed keys and an ongoing scroll movement emulated as a swipe gesture.
 public struct InputActionEncoder: Sendable {
     public var screen: DeviceScreen
     public private(set) var heldKeys: [UInt16] = []
-    /// Fingerposition einer Scroll-Geste, ungerundet – sonst summieren sich Rundungsfehler.
+    /// Finger position of a scroll gesture, unrounded – otherwise rounding errors add up.
     private var scrollX: Double?
     private var scrollY: Double?
 
@@ -59,11 +59,11 @@ public struct InputActionEncoder: Sendable {
             return [.keys(heldKeys)]
 
         case .button(let button, let isDown):
-            // Nur beim Drücken senden – Halten übernimmt der Transport.
+            // Only send on press – the transport handles holding.
             return isDown ? [.button(button, nil)] : []
 
         case .gesture:
-            // Braucht Timing zwischen den Schritten – spielt die Session über `steps` ab.
+            // Needs timing between the steps – the session plays it back via `steps`.
             return endScroll()
         }
     }
@@ -76,7 +76,7 @@ public struct InputActionEncoder: Sendable {
         }
     }
 
-    /// Beendet eine laufende Scroll-Geste (Finger heben).
+    /// Ends an ongoing scroll gesture (lifts the finger).
     public mutating func endScroll() -> [DeviceAction] {
         guard let position = scrollPosition else { return [] }
         scrollX = nil

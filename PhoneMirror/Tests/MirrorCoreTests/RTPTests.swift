@@ -33,7 +33,7 @@ import Testing
 
     @Test func lostPacketDropsOnlyThatFrame() {
         var packets = packetizeAll(maxPayload: 300)
-        // Ein Fragment aus der Mitte des dritten Bildes entfernen.
+        // Remove a fragment from the middle of the third frame.
         var packetizer = RTPHEVCPacketizer(maxPayload: 300)
         let before = (0..<2).reduce(0) { sum, index in
             sum + packetizer.packetize(accessUnit: Self.accessUnits[index], timestamp: UInt32(index * 3000)).count
@@ -45,7 +45,7 @@ import Testing
         #expect(frames.count == Self.accessUnits.count - 1)
     }
 
-    /// Verliert ein Bild sein letztes Paket (mit Marker), darf nur dieses Bild fehlen – nicht das nächste.
+    /// If a frame loses its last packet (with marker), only that frame may be missing – not the next one.
     @Test func lostFinalPacketDropsOnlyThatFrame() throws {
         var packetizer = RTPHEVCPacketizer(maxPayload: 300)
         var perFrame = Self.accessUnits.enumerated().map { index, unit in
@@ -58,12 +58,12 @@ import Testing
         #expect(depacketizer.droppedFrames == 1)
         var expected = Self.accessUnits
         expected.remove(at: victim)
-        // Das letzte Bild wird erst durch ein Folgepaket abgeschlossen; hier fehlt keins, weil es seinen Marker hat.
+        // The last frame is only completed by a following packet; none is missing here because it has its marker.
         #expect(frames.map { AnnexB.split($0.annexB) } == expected)
     }
 
     @Test func rtcpIsIgnored() {
-        // Sender Report (PT 200) im selben Strom.
+        // Sender report (PT 200) in the same stream.
         let senderReport = Data([0x80, 200, 0x00, 0x06] + [UInt8](repeating: 0, count: 24))
         #expect(RTPPacket.isRTCP(senderReport))
         var depacketizer = RTPHEVCDepacketizer()

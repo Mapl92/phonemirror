@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Nativer Transport ohne Python, aufgebaut auf den Erkenntnissen aus pymobiledevice3 (GPL-3.0-or-later).
+// Native transport without Python, built on the findings from pymobiledevice3 (GPL-3.0-or-later).
 import Foundation
 import MirrorCore
 import os
 
-/// Spiegelt das iPhone direkt über den CoreDevice-Tunnel: RemoteXPC zu `dtremotedisplayd` (Video/Ton),
-/// `dtuhidd` (Touch/Tastatur/Tasten) und dem Pasteboard-Dienst. Nutzt die bestehende Kopplung über
-/// `remotepairingd` – ohne Root, ohne Python, ohne Xcode-Prozess.
+/// Mirrors the iPhone directly over the CoreDevice tunnel: RemoteXPC to `dtremotedisplayd` (video/audio),
+/// `dtuhidd` (touch/keyboard/buttons) and the pasteboard service. Uses the existing pairing via
+/// `remotepairingd` – without root, without Python, without an Xcode process.
 public struct NativeTransport: MirrorTransport {
     public var screen: DeviceScreen
     public var udid: String?
@@ -78,9 +78,9 @@ public actor NativeSession: MirrorSession {
         }
         self.assembler = assembler
         videoReceiver.start(deviceAddress: rsd.address, answer: videoAnswer) { assembler.push($0) }
-        Self.logger.notice("Video läuft: [\(localIP, privacy: .public)]:\(videoReceiver.port)")
+        Self.logger.notice("Video running: [\(localIP, privacy: .public)]:\(videoReceiver.port)")
 
-        // Ton (eigene Verbindung, gleiche Client-Session-ID wie Xcode)
+        // Audio (own connection, same client session ID as Xcode)
         do {
             let audioConnection = try await rsd.connect(service: DisplayService.name)
             self.audioConnection = audioConnection
@@ -97,10 +97,10 @@ public actor NativeSession: MirrorSession {
                 continuation.yield(.audio(AudioChunk(pcm: pcm)))
             }
         } catch {
-            Self.logger.error("Ton nicht verfügbar: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Audio not available: \(error.localizedDescription, privacy: .public)")
         }
 
-        // HID: backboardd akzeptiert Eingaben erst, wenn der Stream die Flächen „authentifiziert“ hat.
+        // HID: backboardd only accepts input once the stream has “authenticated” the surfaces.
         try await Task.sleep(for: .milliseconds(500))
         hid = try await Self.connectHID(rsd)
 
@@ -112,7 +112,7 @@ public actor NativeSession: MirrorSession {
         tasks.append(Task { [weak self] in await self?.watchVideo() })
     }
 
-    // MARK: Eingabe
+    // MARK: Input
 
     public func send(_ event: InputEvent) async throws {
         guard !closed, hid != nil else { return }
@@ -137,8 +137,8 @@ public actor NativeSession: MirrorSession {
         )
     }
 
-    /// iOS schließt die HID-Verbindungen gelegentlich (z. B. beim Start von Kamera-Apps), während Video
-    /// weiterläuft. Dann einmal neu verbinden und die Aktion wiederholen.
+    /// iOS occasionally closes the HID connections (e.g. when camera apps start) while video
+    /// keeps running. Then reconnect once and repeat the action.
     private func perform(_ action: DeviceAction) async throws {
         guard let hid else { return }
         do {
@@ -147,7 +147,7 @@ public actor NativeSession: MirrorSession {
             throw CancellationError()
         } catch {
             guard !closed, let rsd else { throw error }
-            Self.logger.notice("HID getrennt (\(error.localizedDescription, privacy: .public)) – verbinde neu")
+            Self.logger.notice("HID disconnected (\(error.localizedDescription, privacy: .public)) – reconnecting")
             hid.close()
             let fresh = try await Self.connectHID(rsd)
             self.hid = fresh
@@ -171,7 +171,7 @@ public actor NativeSession: MirrorSession {
         }
     }
 
-    /// Mausräder liefern kein Gestenende: Finger nach kurzer Ruhe heben.
+    /// Mouse wheels deliver no gesture end: lift the finger after a short idle period.
     private func scheduleScrollRelease() {
         scrollIdleTask?.cancel()
         scrollIdleTask = Task { [weak self] in
@@ -181,26 +181,26 @@ public actor NativeSession: MirrorSession {
         }
     }
 
-    // MARK: Zwischenablage
+    // MARK: Clipboard
 
     public func setClipboard(_ content: ClipboardContent) async throws {
         guard !closed, let pasteboard else { return }
         try await pasteboard.set(content)
-        // Die eigene Änderung nicht als Kopie vom iPhone zurückmelden.
+        // Don't report our own change back as a copy from the iPhone.
         lastClipboardChange = try? await pasteboard.changeID()
     }
 
-    /// Fragt jede Sekunde die Änderungskennung ab (ohne Daten) und holt Inhalt nur bei Änderungen.
+    /// Polls the change identifier every second (without data) and fetches content only on changes.
     private func watchClipboard() async {
         while !Task.isCancelled, !closed {
             try? await Task.sleep(for: .seconds(1))
             guard let pasteboard, let change = try? await pasteboard.changeID(), change != lastClipboardChange else { continue }
             lastClipboardChange = change
             if let content = try? await pasteboard.content() {
-                Self.logger.notice("Zwischenablage vom iPhone übernommen (\(content.kindDescription, privacy: .public))")
+                Self.logger.notice("Clipboard taken over from iPhone (\(content.kindDescription, privacy: .public))")
                 continuation.yield(.clipboard(content))
             } else {
-                Self.logger.notice("Zwischenablage auf dem iPhone geändert, aber kein Text/PNG lesbar")
+                Self.logger.notice("Clipboard changed on the iPhone, but no text/PNG readable")
             }
         }
     }
@@ -221,7 +221,7 @@ public actor NativeSession: MirrorSession {
         guard let rsd else { return [] }
         let connection = try await rsd.connect(service: AppService.name)
         defer { connection.close() }
-        return try await withTimeout(seconds: 20, "Apps auflisten") {
+        return try await withTimeout(seconds: 20, "Listing apps") {
             try await AppService(connection: connection).installedApps()
         }
     }
@@ -230,45 +230,45 @@ public actor NativeSession: MirrorSession {
         guard let rsd else { return }
         let connection = try await rsd.connect(service: AppService.name)
         defer { connection.close() }
-        try await withTimeout(seconds: 15, "App starten") {
+        try await withTimeout(seconds: 15, "Launching app") {
             try await AppService(connection: connection).launch(bundleID: bundleID)
         }
     }
 
-    // MARK: Video-Überwachung
+    // MARK: Video watchdog
 
     public func requestKeyframe() async {
         videoReceiver?.sendPictureLossIndication()
     }
 
-    /// Hängt der Stream: erst Keyframe anfordern, dann neu verbinden lassen.
+    /// If the stream hangs: first request a keyframe, then let it reconnect.
     private func watchVideo() async {
         var lastPLI = Date.distantPast
         let started = Date()
         while !Task.isCancelled, !closed {
             try? await Task.sleep(for: .seconds(1))
             guard let videoReceiver else { continue }
-            // Vor dem ersten Paket zählt die Zeit seit dem Start.
+            // Before the first packet, the time since the start counts.
             let silence = videoReceiver.hasReceivedPackets ? videoReceiver.secondsSinceLastPacket : Date().timeIntervalSince(started)
             if silence > 10 {
-                continuation.yield(.disconnected(reason: "Kein Bild mehr vom iPhone (\(Int(silence)) s)"))
+                continuation.yield(.disconnected(reason: "No more picture from the iPhone (\(Int(silence)) s)"))
                 return
             }
             if silence > 4, Date().timeIntervalSince(lastPLI) > 2 {
                 lastPLI = Date()
                 videoReceiver.sendPictureLossIndication()
             }
-            // Pakete kommen, aber noch kein Keyframe (Start-IDR verpasst): ohne Keyframe bleibt das Bild
-            // schwarz bzw. eingefroren – nachfordern, bis eins da ist.
+            // Packets arrive, but no keyframe yet (start IDR missed): without a keyframe the picture stays
+            // black or frozen – keep requesting until one arrives.
             if videoReceiver.hasReceivedPackets, assembler?.hasKeyframe == false, Date().timeIntervalSince(lastPLI) > 1.5 {
                 lastPLI = Date()
                 videoReceiver.sendPictureLossIndication()
-                Self.logger.notice("Noch kein Keyframe – PLI gesendet")
+                Self.logger.notice("No keyframe yet – PLI sent")
             }
         }
     }
 
-    // MARK: Ende
+    // MARK: Teardown
 
     public func close() async {
         guard !closed else { return }
@@ -277,9 +277,9 @@ public actor NativeSession: MirrorSession {
         scrollIdleTask?.cancel()
         videoReceiver?.stop()
         audioReceiver?.stop()
-        // Streams auf dem Gerät beenden – sonst bleibt es „ferngesteuert“ markiert (Kamera/Mikro gesperrt).
+        // End the streams on the device – otherwise it stays marked as “remote controlled” (camera/mic blocked).
         if let videoConnection {
-            _ = try? await withTimeout(seconds: 3, "Stream stoppen") {
+            _ = try? await withTimeout(seconds: 3, "Stopping stream") {
                 try await DisplayService(connection: videoConnection).stopAllStreams()
             }
         }
@@ -291,7 +291,7 @@ public actor NativeSession: MirrorSession {
     }
 }
 
-/// Setzt RTP-Pakete auf dem Empfangs-Thread zu Bildern zusammen; fordert bei Verlust ein Keyframe an.
+/// Assembles RTP packets into frames on the receive thread; requests a keyframe on loss.
 final class VideoAssembler: @unchecked Sendable {
     private var depacketizer = RTPHEVCDepacketizer()
     private let continuation: AsyncStream<TransportEvent>.Continuation
@@ -306,7 +306,7 @@ final class VideoAssembler: @unchecked Sendable {
     private let lock = NSLock()
     private var sawKeyframe = false
 
-    /// Wurde seit dem Start ein Keyframe empfangen? (Vom Watchdog gelesen.)
+    /// Has a keyframe been received since the start? (Read by the watchdog.)
     var hasKeyframe: Bool {
         lock.lock(); defer { lock.unlock() }
         return sawKeyframe
@@ -320,7 +320,7 @@ final class VideoAssembler: @unchecked Sendable {
             }
             continuation.yield(.video(frame))
         }
-        // Verlorenes Bild: Folgebilder verweisen darauf – frisches Keyframe anfordern (höchstens 2×/s).
+        // Lost frame: subsequent frames reference it – request a fresh keyframe (at most 2×/s).
         if depacketizer.droppedFrames > dropped, Date().timeIntervalSince(lastPLI) > 0.5 {
             lastPLI = Date()
             requestKeyframe()
@@ -329,7 +329,7 @@ final class VideoAssembler: @unchecked Sendable {
 }
 
 extension HardwareButton {
-    /// HID-Consumer-Usage und Haltedauer: Sperren braucht ≈ 0,5 s, Siri ≈ 1 s (sonst als Prellen verworfen).
+    /// HID consumer usage and hold duration: Lock needs ≈ 0.5 s, Siri ≈ 1 s (otherwise discarded as bounce).
     var consumerUsage: (page: UInt16, usage: UInt16, hold: Double) {
         switch self {
         case .home: (0x0C, 0x40, 0.05)
@@ -344,7 +344,7 @@ extension HardwareButton {
 extension ClipboardContent {
     var kindDescription: String {
         switch self {
-        case .text(let text): "Text, \(text.count) Zeichen"
+        case .text(let text): "Text, \(text.count) characters"
         case .png(let png): "PNG, \(png.count) Bytes"
         case .html(let html): "HTML, \(html.count) Bytes"
         case .rtf(let rtf): "RTF, \(rtf.count) Bytes"

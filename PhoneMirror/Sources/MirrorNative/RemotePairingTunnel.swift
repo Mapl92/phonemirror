@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Zugang zum bestehenden CoreDevice-Tunnel über remotepairingd, nachgebaut nach pymobiledevice3
+// Access to the existing CoreDevice tunnel via remotepairingd, recreated after pymobiledevice3
 // (remote/native_tunnel.py, GPL-3.0-or-later).
 import Darwin
 import Foundation
 import os
 @preconcurrency import XPC
 
-/// Von mehreren Threads (XPC-Queue, Aufrufer) genutzter Wert, per Lock geschützt.
+/// Value used from several threads (XPC queue, caller), protected by a lock.
 private final class LockedBox<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Value
@@ -26,17 +26,17 @@ public enum NativeTunnelError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .deviceNotFound: "remotepairingd meldet kein gekoppeltes Gerät"
-        case .pairing(let message): "Kopplung: \(message)"
-        case .noTunnelAddress: "remotepairingd lieferte keine Tunnel-Adresse"
-        case .noRSDPort(let address): "Kein RSD-Port von remoted zu \(address) gefunden"
-        case .timeout(let what): "Zeitüberschreitung bei \(what)"
+        case .deviceNotFound: "remotepairingd reports no paired device"
+        case .pairing(let message): "Pairing: \(message)"
+        case .noTunnelAddress: "remotepairingd returned no tunnel address"
+        case .noRSDPort(let address): "No RSD port from remoted to \(address) found"
+        case .timeout(let what): "Timed out waiting for \(what)"
         }
     }
 }
 
-/// Hält über `com.apple.CoreDevice.remotepairingd` eine Assertion auf den Tunnel des Geräts.
-/// Die Tunnel-Adresse ist für normale Prozesse routbar – ohne Root, Entitlement oder Xcode.
+/// Holds an assertion on the device's tunnel via `com.apple.CoreDevice.remotepairingd`.
+/// The tunnel address is routable for normal processes – without root, entitlement or Xcode.
 public final class RemotePairingTunnel: @unchecked Sendable {
     public private(set) var tunnelAddress: String?
     public private(set) var udid: String?
@@ -54,7 +54,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         close()
     }
 
-    /// Gerät suchen (`udid` oder das erste), koppeln falls nötig, Assertion anlegen. Liefert die Tunnel-IPv6.
+    /// Find the device (`udid` or the first one), pair if needed, create an assertion. Returns the tunnel IPv6.
     public func open(udid wanted: String? = nil) throws -> String {
         let endpoint = try browse(udid: wanted)
         let device = xpc_connection_create_from_endpoint(endpoint)
@@ -62,7 +62,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         xpc_connection_activate(device)
         deviceConnection = device
 
-        // Bereits gekoppelt meldet RemotePairingError 1002 – harmlos.
+        // Already paired is reported as RemotePairingError 1002 – harmless.
         let initiate = try request(device, "RemotePairing.InitiatePairingCommand") { body in
             xpc_dictionary_set_bool(body, "requireNonInteractive", false)
         }
@@ -75,7 +75,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
             xpc_dictionary_set_int64(body, "flags", 0)
         }
         guard let response = xpc_dictionary_get_value(assertion, "response") else {
-            throw NativeTunnelError.pairing("CreateAssertion ohne Antwort")
+            throw NativeTunnelError.pairing("CreateAssertion without response")
         }
         assertionIdentifier = xpc_dictionary_get_value(response, "assertionIdentifier")
         guard let info = xpc_dictionary_get_value(response, "info"),
@@ -123,7 +123,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         xpc_connection_activate(connection)
         browseConnection = connection
 
-        // Mercury verwirft Anfragen ohne Antwortkanal – daher mit Reply senden, Antwort ignorieren.
+        // Mercury discards requests without a reply channel – so send with reply and ignore the reply.
         let message = xpc_dictionary_create(nil, nil, 0)
         let body = xpc_dictionary_create(nil, nil, 0)
         xpc_dictionary_set_bool(body, "currentDevicesOnly", false)
@@ -138,7 +138,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         return device.endpoint
     }
 
-    /// `{mangledTypeName, value}` senden und synchron auf die Antwort warten.
+    /// Send `{mangledTypeName, value}` and wait synchronously for the reply.
     private func request(_ connection: xpc_connection_t, _ typeName: String, body setup: (xpc_object_t) -> Void) throws -> xpc_object_t {
         let body = xpc_dictionary_create(nil, nil, 0)
         setup(body)
@@ -155,16 +155,16 @@ public final class RemotePairingTunnel: @unchecked Sendable {
             throw NativeTunnelError.timeout(typeName)
         }
         if xpc_get_type(response) == XPC_TYPE_ERROR {
-            throw NativeTunnelError.pairing("\(typeName): XPC-Fehler")
+            throw NativeTunnelError.pairing("\(typeName): XPC error")
         }
         return response
     }
 }
 
-/// Findet den RSD-Port im Tunnel und die Handshake-UUID von `remoted`.
+/// Finds the RSD port in the tunnel and the handshake UUID of `remoted`.
 public enum RSDLocator {
-    /// `remoted`s TCP-Verbindungen zur Tunnel-Adresse – laut `nettop` (das als einziges Apple-Tool mit
-    /// passendem Entitlement die Sockets fremder Prozesse sieht, ab macOS 27 auch ohne Root).
+    /// `remoted`'s TCP connections to the tunnel address – according to `nettop` (the only Apple tool with a
+    /// suitable entitlement that sees other processes' sockets; from macOS 27 on also without root).
     public static func candidatePorts(tunnelAddress: String) -> [UInt16] {
         guard let output = run("/usr/bin/nettop", ["-n", "-x", "-L", "1", "-m", "tcp", "-J", "interface,state"]) else { return [] }
         let target = normalizedIPv6(tunnelAddress)
@@ -191,8 +191,8 @@ public enum RSDLocator {
         return ports
     }
 
-    /// UUID, mit der sich `remoted` beim Gerät meldet (`remotectl dumpstate`). Auf `remoted`s Tunnel
-    /// muss derselbe Wert gesendet werden, sonst schließt iOS ab 27.2 die gerade angebotenen Dienste.
+    /// UUID with which `remoted` registers with the device (`remotectl dumpstate`). The same value must be
+    /// sent on `remoted`'s tunnel, otherwise iOS 27.2 and later closes the services just offered.
     public static func remotedUUID() -> UUID? {
         guard let output = run("/usr/libexec/remotectl", ["dumpstate"]) else { return nil }
         let lines = output.components(separatedBy: "\n")

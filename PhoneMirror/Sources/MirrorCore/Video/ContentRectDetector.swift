@@ -2,15 +2,15 @@
 import CoreGraphics
 import CoreVideo
 
-/// Erkennt den „Resolution Collapse“ des iOS-Encoders: Bei viel Bewegung kodiert iOS den Bildschirm
-/// verkleinert in die linke obere Ecke und füllt den Rest mit Grau (RGB 128). Liefert dann die Größe
-/// des Inhalts in Pixeln, sonst `nil`. Gleiche Schwellen wie der Web-Viewer von pymobiledevice3:
-/// Spalten/Zeilen gelten ab 60 % Grauanteil als Rand, ein Collapse nur zwischen 20 % und 92 % der Größe.
+/// Detects the iOS encoder's “resolution collapse”: with a lot of motion, iOS encodes the screen
+/// scaled down into the top left corner and fills the rest with gray (RGB 128). Then returns the size
+/// of the content in pixels, otherwise `nil`. Same thresholds as pymobiledevice3's web viewer:
+/// columns/rows count as margin from 60 % gray, a collapse only between 20 % and 92 % of the size.
 public enum ContentRectDetector {
     public static let grayTolerance = 6
     public static let grayFraction = 0.6
 
-    /// Arbeitet auf einem BGRA-Bild (8 Bit pro Kanal).
+    /// Works on a BGRA image (8 bits per channel).
     public static func collapsedContentSize(
         bytes: UnsafeRawPointer, width: Int, height: Int, bytesPerRow: Int
     ) -> CGSize? {
@@ -39,7 +39,7 @@ public enum ContentRectDetector {
             return Double(gray) / Double(total) >= grayFraction
         }
 
-        // Schneller Ausschluss: Im Normalfall ist der rechte/untere Rand schwarz (Padding) oder Inhalt.
+        // Quick rejection: normally the right/bottom margin is black (padding) or content.
         guard columnIsPadding(width - 2), rowIsPadding(height - 2) else { return nil }
 
         let scan = max(1, width / 512)
@@ -68,8 +68,8 @@ public enum ContentRectDetector {
         )
     }
 
-    /// Sichtbarer Ausschnitt als `contentsRect` (Einheitskoordinaten, Ursprung oben links):
-    /// bei einem Collapse der erkannte Inhalt, sonst das echte Display ohne Padding.
+    /// Visible region as `contentsRect` (unit coordinates, origin top left):
+    /// on a collapse the detected content, otherwise the real display without padding.
     public static func visibleFraction(codedPixels: CGSize, screenPixels: CGSize, collapsed: CGSize?) -> CGSize {
         guard codedPixels.width > 0, codedPixels.height > 0 else { return CGSize(width: 1, height: 1) }
         let visible = collapsed ?? screenPixels

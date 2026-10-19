@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// CoreDevice-Dienste auf dem Gerät, nachgebaut nach pymobiledevice3
+// CoreDevice services on the device, recreated after pymobiledevice3
 // (remote/core_device/core_device_service.py, display_service.py, hid_service.py, pasteboard_service.py;
 // GPL-3.0-or-later).
 import Foundation
@@ -12,11 +12,11 @@ public struct CoreDeviceError: LocalizedError {
     public var message: String
     public var errorDescription: String? { message + (code.map { " (Code \($0))" } ?? "") }
 
-    /// Kamera oder Mikrofon sind von einer App belegt – iOS verweigert dann die Spiegelung.
+    /// Camera or microphone is in use by an app – iOS then refuses mirroring.
     public var isMediaInUse: Bool { code == 9022 }
 }
 
-/// Aufruf von CoreDevice-Features über eine RemoteXPC-Verbindung.
+/// Invocation of CoreDevice features over a RemoteXPC connection.
 public final class CoreDeviceService: @unchecked Sendable {
     public let connection: RemoteXPCConnection
 
@@ -46,14 +46,14 @@ public final class CoreDeviceService: @unchecked Sendable {
         let error = response["CoreDevice.error"]
         throw CoreDeviceError(
             code: error?["code"]?.intValue,
-            message: error?["userInfo"]?["NSLocalizedDescription"]?.stringValue ?? "\(feature) fehlgeschlagen"
+            message: error?["userInfo"]?["NSLocalizedDescription"]?.stringValue ?? "\(feature) failed"
         )
     }
 }
 
 extension CoreDeviceService {
-    /// Streaming-Feature (z. B. `streamapplist`): Das Gerät schickt Elemente stapelweise über einen
-    /// „Side Channel“ und schließt mit `finishStreaming`.
+    /// Streaming feature (e.g. `streamapplist`): the device sends elements in batches over a
+    /// “side channel” and finishes with `finishStreaming`.
     public func streamInvoke(feature: String, input: XPCValue) async throws -> [XPCValue] {
         let request: XPCValue = [
             "CoreDevice.CoreDeviceDDIProtocolVersion": .int64(2),
@@ -69,16 +69,16 @@ extension CoreDeviceService {
         while true {
             let response = try await connection.receiveResponse()
             guard let status = response["CoreDevice.XPCMessageKey.sideChannelStatus"] else {
-                throw CoreDeviceError(code: response["CoreDevice.error"]?["code"]?.intValue, message: "\(feature) fehlgeschlagen")
+                throw CoreDeviceError(code: response["CoreDevice.error"]?["code"]?.intValue, message: "\(feature) failed")
             }
-            if status["receivedError"] != nil { throw CoreDeviceError(code: nil, message: "\(feature): Fehler im Stream") }
+            if status["receivedError"] != nil { throw CoreDeviceError(code: nil, message: "\(feature): error in stream") }
             if status["finishStreaming"] != nil { return elements }
             elements += status["pushing"]?["elements"]?.arrayValue ?? []
         }
     }
 }
 
-/// `com.apple.coredevice.appservice` (dtappserviced): Apps auflisten und starten.
+/// `com.apple.coredevice.appservice` (dtappserviced): list and launch apps.
 public final class AppService: @unchecked Sendable {
     public static let name = "com.apple.coredevice.appservice"
     public let service: CoreDeviceService
@@ -87,7 +87,7 @@ public final class AppService: @unchecked Sendable {
         service = CoreDeviceService(connection: connection)
     }
 
-    /// Seit iOS 26 nur noch als Stream – der klassische `listapps` antwortet nicht mehr.
+    /// Since iOS 26 only available as a stream – the classic `listapps` no longer answers.
     public func installedApps() async throws -> [InstalledApp] {
         let elements = try await service.streamInvoke(feature: "com.apple.coredevice.feature.streamapplist", input: [
             "includeAppClips": false, "includeRemovableApps": true, "includeHiddenApps": false,
@@ -120,7 +120,7 @@ public final class AppService: @unchecked Sendable {
     }
 }
 
-/// `com.apple.coredevice.displayservice` (dtremotedisplayd): Bildschirm- und Ton-Streams.
+/// `com.apple.coredevice.displayservice` (dtremotedisplayd): screen and audio streams.
 public final class DisplayService: @unchecked Sendable {
     public static let name = "com.apple.coredevice.displayservice"
     public let service: CoreDeviceService
@@ -137,17 +137,17 @@ public final class DisplayService: @unchecked Sendable {
     }
 
     public struct StreamAnswer: Sendable {
-        /// Absenderport des Geräts – Ziel für RTCP.
+        /// The device's sender port – destination for RTCP.
         public var sourcePort: UInt16
-        /// SSRC des Geräts („LocalSSRC“ aus Gerätesicht).
+        /// The device's SSRC (“LocalSSRC” from the device's point of view).
         public var deviceSSRC: UInt32
-        /// Unsere SSRC („RemoteSSRC“ aus Gerätesicht).
+        /// Our SSRC (“RemoteSSRC” from the device's point of view).
         public var ourSSRC: UInt32
     }
 
     public enum Kind: String, Sendable { case video, audio }
 
-    /// Startet einen Stream. Der UDP-Empfänger muss bereits auf `receiverPort` lauschen.
+    /// Starts a stream. The UDP receiver must already be listening on `receiverPort`.
     public func startStream(
         _ kind: Kind, receiverIP: String, receiverPort: UInt16, senderIP: String,
         sessionID: UUID, displayID: Int = 1
@@ -190,7 +190,7 @@ public final class DisplayService: @unchecked Sendable {
         )
     }
 
-    /// Beendet alle Streams; ohne das bleibt das iPhone „ferngesteuert“ markiert (Kamera/Mikro gesperrt).
+    /// Ends all streams; without this the iPhone stays marked as “remote controlled” (camera/mic blocked).
     public func stopAllStreams() async throws {
         _ = try await service.invoke(
             feature: "com.apple.coredevice.feature.stopmediastream",
@@ -200,7 +200,7 @@ public final class DisplayService: @unchecked Sendable {
     }
 }
 
-/// HID über `dtuhidd`: Touch (mainTouchscreen), virtuelle Tastatur, Hardwaretasten.
+/// HID via `dtuhidd`: touch (mainTouchscreen), virtual keyboard, hardware buttons.
 public final class HIDService: @unchecked Sendable {
     public static let universalName = "com.apple.coredevice.hid.universalhidservice"
     public static let indigoName = "com.apple.coredevice.hid.indigo"
@@ -222,7 +222,7 @@ public final class HIDService: @unchecked Sendable {
         indigo.close()
     }
 
-    /// Touch: `contact` (Finger liegt auf) oder Loslassen, Koordinaten 0…65535.
+    /// Touch: `contact` (finger is down) or release, coordinates 0…65535.
     public func touch(contact: Bool, at point: TouchPoint) async throws {
         var report = Data([0x09, 0x01, 0x05, contact ? 0xC2 : 0x02])
         report.append(littleEndian: point.x)
@@ -234,7 +234,7 @@ public final class HIDService: @unchecked Sendable {
         try await send(report: report, to: Self.touchscreenServiceID)
     }
 
-    /// Tastatur: vollständige Menge gedrückter HID-Usages (leer = alle losgelassen).
+    /// Keyboard: complete set of pressed HID usages (empty = all released).
     public func keyboard(usages: [UInt16]) async throws {
         let id = try await ensureKeyboard()
         var bitmap = [UInt8](repeating: 0, count: 30)
@@ -248,7 +248,7 @@ public final class HIDService: @unchecked Sendable {
         try await send(report: report, to: id)
     }
 
-    /// Hardwaretaste (Consumer-Page-Usage) drücken, halten, loslassen.
+    /// Press, hold and release a hardware button (consumer page usage).
     public func press(usagePage: UInt16, usage: UInt16, hold: Double) async throws {
         try await button(usagePage: usagePage, usage: usage, state: 1)
         try await Task.sleep(for: .seconds(hold))
@@ -275,8 +275,8 @@ public final class HIDService: @unchecked Sendable {
         ])
     }
 
-    /// Virtuelle Tastatur bei dtuhidd anmelden (wie Universal Control). Werte im Storage-Block brauchen
-    /// Swift-Codable-Hüllen (`{"int": …}`), sonst lehnt dtuhidd mit `typeMismatch` ab.
+    /// Register a virtual keyboard with dtuhidd (like Universal Control). Values in the storage block need
+    /// Swift Codable wrappers (`{"int": …}`), otherwise dtuhidd rejects with `typeMismatch`.
     private func ensureKeyboard() async throws -> UInt64 {
         if let keyboardID { return keyboardID }
         let usage = XPCValue.int64(6), page = XPCValue.int64(1)
@@ -313,7 +313,7 @@ public final class HIDService: @unchecked Sendable {
         ])
         let id = response["serviceID"]?.intValue.map(UInt64.init) ?? Self.keyboardServiceID
         keyboardID = id
-        // iOS braucht einen Moment, bis die Tastatur angebunden ist (sonst bleibt Shift hängen).
+        // iOS needs a moment until the keyboard is attached (otherwise Shift gets stuck).
         try await Task.sleep(for: .milliseconds(300))
         return id
     }
@@ -324,8 +324,8 @@ public final class HIDService: @unchecked Sendable {
     }
 }
 
-/// `com.apple.coredevice.pasteboardservice`: Zwischenablage lesen und setzen.
-/// Jede Anfrage auf eigener Verbindung – der Dienst kann bei „reichen“ Kopien lange brauchen.
+/// `com.apple.coredevice.pasteboardservice`: read and set the clipboard.
+/// Each request on its own connection – the service can take a long time for “rich” copies.
 public final class PasteboardService: @unchecked Sendable {
     public static let name = "com.apple.coredevice.pasteboardservice"
     private let open: @Sendable () async throws -> RemoteXPCConnection
@@ -334,7 +334,7 @@ public final class PasteboardService: @unchecked Sendable {
         self.open = open
     }
 
-    /// Änderungskennung (nonce, changeCount) ohne Daten – schnell.
+    /// Change identifier (nonce, changeCount) without data – fast.
     public func changeID() async throws -> String? {
         let snapshot = try await pull(policy: ["allPromised": [:]])
         let metadata = snapshot["pasteboard"]?["metadata"]
@@ -345,9 +345,9 @@ public final class PasteboardService: @unchecked Sendable {
     static let textTypes = ["public.utf8-plain-text", "public.plain-text", "public.text", "public.url"]
     static let imageTypes = ["public.png", "public.jpeg", "public.heic", "public.tiff"]
 
-    /// Inhalt der aktuellen Kopie aus den primären Typen (`promiseSecondary`). Bewusst kein Abruf aller
-    /// Darstellungen: iOS rechnet dafür z. B. HTML in RTF um und blockiert den Dienst bis zu einer Minute.
-    /// Formatierte Kopien (Safari: HTML zuerst, Notizen: RTF zuerst) kommen deshalb als HTML/RTF.
+    /// Contents of the current copy from the primary types (`promiseSecondary`). Deliberately not fetching all
+    /// representations: for that, iOS e.g. converts HTML to RTF and blocks the service for up to a minute.
+    /// Formatted copies (Safari: HTML first, Notes: RTF first) therefore arrive as HTML/RTF.
     public func content() async throws -> ClipboardContent? {
         Self.extract(try await pull(policy: ["promiseSecondary": [:]]))
     }
@@ -402,13 +402,13 @@ public final class PasteboardService: @unchecked Sendable {
             "items": .array([item]),
             "sourceMetadata": .null,
         ], wantingReply: true)
-        _ = try? await withTimeout(seconds: 5, "Zwischenablage setzen") { try await connection.receiveResponse() }
+        _ = try? await withTimeout(seconds: 5, "Setting clipboard") { try await connection.receiveResponse() }
     }
 
     private func pull(policy: XPCValue, timeout: Double = 10) async throws -> XPCValue {
         let connection = try await open()
         defer { connection.close() }
-        return try await withTimeout(seconds: timeout, "Zwischenablage lesen") {
+        return try await withTimeout(seconds: timeout, "Reading clipboard") {
             try await connection.sendReceive(["command": "PULL", "pasteboardName": "general", "dataPolicy": policy])
         }
     }
@@ -431,7 +431,7 @@ extension Data {
     }
 }
 
-/// Wandelt JPEG/HEIC/TIFF in PNG (die Mac-Seite kennt nur Text und PNG).
+/// Converts JPEG/HEIC/TIFF to PNG (the Mac side only knows text and PNG).
 enum ImageConversion {
     static func png(from data: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// Kopf eines RTP-Pakets (RFC 3550) samt Nutzdaten ohne CSRC, Header-Extension und Padding.
+/// Header of an RTP packet (RFC 3550) plus payload, without CSRC, header extension and padding.
 public struct RTPPacket: Sendable, Equatable {
     public var payloadType: UInt8
     public var marker: Bool
@@ -10,7 +10,7 @@ public struct RTPPacket: Sendable, Equatable {
     public var ssrc: UInt32
     public var payload: Data
 
-    /// RTCP im selben Port (rtcp-mux, RFC 5761): Pakettypen 200–204 erscheinen als PT 72–76 mit gesetztem Marker-Bit.
+    /// RTCP on the same port (rtcp-mux, RFC 5761): packet types 200–204 appear as PT 72–76 with the marker bit set.
     public static func isRTCP(_ packet: Data) -> Bool {
         guard packet.count >= 2 else { return false }
         return (200...204).contains(packet[packet.startIndex + 1])
@@ -41,11 +41,11 @@ public struct RTPPacket: Sendable, Equatable {
     }
 }
 
-/// Setzt HEVC-RTP-Pakete (RFC 7798) wieder zu Annex-B-Access-Units zusammen.
-/// Unterstützt Einzel-NALs, Aggregation Packets (Typ 48) und Fragmentation Units (Typ 49), ohne DONL.
-/// Bei Paketverlust wird das betroffene Bild verworfen.
+/// Reassembles HEVC RTP packets (RFC 7798) into Annex B access units.
+/// Supports single NALs, aggregation packets (type 48) and fragmentation units (type 49), without DONL.
+/// On packet loss the affected frame is dropped.
 public struct RTPHEVCDepacketizer: Sendable {
-    /// iOS 27 (`dtremotedisplayd`) taktet Video-RTP mit 24 kHz: 400 Ticks pro Bild bei 60 fps (gemessen).
+    /// iOS 27 (`dtremotedisplayd`) clocks video RTP at 24 kHz: 400 ticks per frame at 60 fps (measured).
     public static let iOSDisplayClockRate = 24_000.0
 
     public var clockRate: Double
@@ -61,8 +61,8 @@ public struct RTPHEVCDepacketizer: Sendable {
         self.clockRate = clockRate
     }
 
-    /// Verarbeitet ein rohes RTP-Paket. Liefert ein fertiges Bild, sobald das Marker-Bit oder
-    /// ein neuer Zeitstempel das vorige abschließt.
+    /// Processes a raw RTP packet. Returns a complete frame as soon as the marker bit or
+    /// a new timestamp finishes the previous one.
     public mutating func push(_ data: Data) -> VideoPacket? {
         guard !RTPPacket.isRTCP(data), let packet = RTPPacket(data) else { return nil }
         var completed: VideoPacket?
@@ -70,13 +70,13 @@ public struct RTPHEVCDepacketizer: Sendable {
         let frameOpen = !units.isEmpty || fragment != nil
 
         if let current = currentTimestamp, current != packet.timestamp {
-            // Neues Bild ohne Marker am alten: Bei einer Lücke fehlt dem alten Bild sein Ende.
-            // Ein verlorener Anfang des neuen Bildes fällt in `consume` auf (Fragment ohne Start).
+            // New frame without a marker on the old one: on a gap, the old frame is missing its end.
+            // A lost start of the new frame is caught in `consume` (fragment without start).
             if frameOpen {
                 if hasGap { frameCorrupted = true }
                 completed = finishFrame()
             } else if hasGap {
-                frameCorrupted = true // altes Bild war vollständig – die Lücke gehört zum neuen
+                frameCorrupted = true // old frame was complete – the gap belongs to the new one
             }
         } else if hasGap {
             frameCorrupted = true
@@ -97,7 +97,7 @@ public struct RTPHEVCDepacketizer: Sendable {
         guard bytes.count >= 2 else { return }
         let type = (bytes[0] >> 1) & 0x3F
         switch type {
-        case 48: // Aggregation Packet: [2-Byte-Länge][NAL] …
+        case 48: // Aggregation packet: [2-byte length][NAL] …
             var offset = 2
             while offset + 2 <= bytes.count {
                 let size = Int(bytes[offset]) << 8 | Int(bytes[offset + 1])
@@ -109,34 +109,34 @@ public struct RTPHEVCDepacketizer: Sendable {
                 units.append(HEVCNALUnit(Data(bytes[offset..<offset + size])))
                 offset += size
             }
-        case 49: // Fragmentation Unit: Payload-Header (2) + FU-Header (1) + Fragment
+        case 49: // Fragmentation unit: payload header (2) + FU header (1) + fragment
             guard bytes.count >= 3 else { return }
             let fuHeader = bytes[2]
             let isStart = fuHeader & 0x80 != 0
             let isEnd = fuHeader & 0x40 != 0
             if isStart {
-                // Ursprünglichen NAL-Header aus Payload-Header und FU-Typ wiederherstellen.
+                // Restore the original NAL header from the payload header and FU type.
                 let nalType = fuHeader & 0x3F
                 let header0 = (bytes[0] & 0x81) | (nalType << 1)
                 fragment = Data([header0, bytes[1]]) + Data(bytes[3...])
             } else if fragment != nil {
                 fragment?.append(contentsOf: bytes[3...])
             } else {
-                frameCorrupted = true // Fortsetzung ohne Anfang (Verlust)
+                frameCorrupted = true // continuation without a start (loss)
             }
             if isEnd, let complete = fragment {
                 units.append(HEVCNALUnit(Self.strippingDisplayServiceTrailer(complete)))
                 fragment = nil
             }
-        case 50: // PACI – wird von iOS nicht genutzt
+        case 50: // PACI – not used by iOS
             break
         default:
             units.append(HEVCNALUnit(Self.strippingDisplayServiceTrailer(payload)))
         }
     }
 
-    /// `dtremotedisplayd` hängt an jede Slice-NAL einen festen 14-Byte-Anhang, der nicht zum HEVC-Bitstrom gehört.
-    /// Apples Empfänger (avconferenced) entfernt ihn vor dem Dekodieren (Befund aus pymobiledevice3).
+    /// `dtremotedisplayd` appends a fixed 14-byte trailer to every slice NAL that is not part of the HEVC bitstream.
+    /// Apple's receiver (avconferenced) removes it before decoding (finding from pymobiledevice3).
     public static let displayServiceTrailer = Data([0x04, 0xF0, 0x0A, 0xC0, 0x00, 0x00, 0x03, 0x00, 0x00, 0x04, 0xEC, 0x0A, 0xB0, 0x03])
 
     static func strippingDisplayServiceTrailer(_ nal: Data) -> Data {
@@ -150,7 +150,7 @@ public struct RTPHEVCDepacketizer: Sendable {
             fragment = nil
             frameCorrupted = false
         }
-        // Unvollständiges Fragment = Ende des Bildes verloren.
+        // Incomplete fragment = end of the frame lost.
         if frameCorrupted || fragment != nil {
             if !units.isEmpty || fragment != nil { droppedFrames += 1 }
             return nil
@@ -164,7 +164,7 @@ public struct RTPHEVCDepacketizer: Sendable {
     }
 }
 
-/// Liest das Mitschnittformat von `pymobiledevice3 … start-video-stream`: wiederholt [4-Byte-Länge BE][RTP-Paket].
+/// Reads the capture format of `pymobiledevice3 … start-video-stream`: repeated [4-byte length BE][RTP packet].
 public enum RTPDumpFile {
     public static func packets(in data: Data) -> [Data] {
         let bytes = [UInt8](data)

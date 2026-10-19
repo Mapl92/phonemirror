@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// Schlankes JSON-Modell für JSON-RPC/MCP.
+/// Lean JSON model for JSON-RPC/MCP.
 public enum JSONValue: Equatable, Sendable {
     case null
     case bool(Bool)
@@ -40,7 +40,7 @@ public enum JSONValue: Equatable, Sendable {
         return nil
     }
 
-    // MARK: Umwandlung
+    // MARK: Conversion
 
     public init(any value: Any) {
         switch value {

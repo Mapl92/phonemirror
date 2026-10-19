@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Wire-Format von RemoteXPC nachgebaut nach pymobiledevice3 (remote/xpc_message.py, GPL-3.0-or-later).
+// RemoteXPC wire format recreated after pymobiledevice3 (remote/xpc_message.py, GPL-3.0-or-later).
 import Foundation
 
-/// Ein XPC-Objekt, wie es RemoteXPC über HTTP/2 serialisiert.
+/// An XPC object as RemoteXPC serializes it over HTTP/2.
 public indirect enum XPCValue: Equatable, Sendable {
     case null
     case bool(Bool)
     case int64(Int64)
     case uint64(UInt64)
     case double(Double)
-    /// Nanosekunden seit 1970.
+    /// Nanoseconds since 1970.
     case date(Int64)
     case data(Data)
     case string(String)
     case uuid(UUID)
     case array([XPCValue])
-    /// Reihenfolge wie auf dem Draht.
+    /// Order as on the wire.
     case dictionary([XPCEntry])
-    /// Typ ohne bekanntes Layout (z. B. File-Transfer); nur zum Durchreichen beim Lesen.
+    /// Type without a known layout (e.g. file transfer); only for passing through when reading.
     case unsupported(UInt32)
 
     public subscript(key: String) -> XPCValue? {
@@ -100,7 +100,7 @@ enum XPCType: UInt32 {
     case array = 0xE000, dictionary = 0xF000
 }
 
-/// Flags des RemoteXPC-Rahmens.
+/// Flags of the RemoteXPC frame.
 public struct XPCFlags: OptionSet, Sendable {
     public let rawValue: UInt32
     public init(rawValue: UInt32) { self.rawValue = rawValue }
@@ -113,7 +113,7 @@ public struct XPCFlags: OptionSet, Sendable {
     public static let initHandshake = XPCFlags(rawValue: 0x0040_0000)
 }
 
-/// Ein RemoteXPC-Rahmen: Header (Magic, Flags, Länge, Message-ID) plus optionales XPC-Objekt.
+/// A RemoteXPC frame: header (magic, flags, length, message ID) plus optional XPC object.
 public struct XPCWrapper: Equatable, Sendable {
     static let magic: UInt32 = 0x29B0_0B92
     static let payloadMagic: UInt32 = 0x4213_3742
@@ -134,7 +134,7 @@ public struct XPCWrapper: Equatable, Sendable {
         lhs.flags.rawValue == rhs.flags.rawValue && lhs.messageID == rhs.messageID && lhs.payload == rhs.payload
     }
 
-    /// Rahmen für eine Anfrage (wie `create_xpc_wrapper`).
+    /// Frame for a request (like `create_xpc_wrapper`).
     public static func request(_ dictionary: XPCValue, messageID: UInt64, wantingReply: Bool) -> XPCWrapper {
         var flags: XPCFlags = .alwaysSet
         if let entries = dictionary.entries, !entries.isEmpty { flags.insert(.dataPresent) }
@@ -158,8 +158,8 @@ public struct XPCWrapper: Equatable, Sendable {
         return out.data
     }
 
-    /// Liest einen Rahmen vom Anfang von `data`. Gibt den Rahmen und die verbrauchte Länge zurück.
-    /// - Throws: `.truncated`, wenn `data` nur einen Teil des Rahmens enthält.
+    /// Reads a frame from the start of `data`. Returns the frame and the consumed length.
+    /// - Throws: `.truncated` if `data` contains only part of the frame.
     public static func decode(_ data: Data) throws -> (XPCWrapper, Int) {
         var reader = ByteReader(data)
         let magic = try reader.u32()
@@ -293,7 +293,7 @@ enum XPCCodec {
     }
 }
 
-// MARK: - Byte-Helfer (Little Endian)
+// MARK: - Byte helpers (little endian)
 
 struct ByteWriter {
     var data = Data()
@@ -303,7 +303,7 @@ struct ByteWriter {
     mutating func u32(_ value: UInt32) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
     mutating func u64(_ value: UInt64) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
 
-    /// Auf 4 Byte auffüllen, gemessen ab Beginn des Werts (wie `Aligned(4, …)`).
+    /// Pad to 4 bytes, measured from the start of the value (like `Aligned(4, …)`).
     mutating func pad(fromLength length: Int) {
         let padding = (4 - length % 4) % 4
         data.append(contentsOf: [UInt8](repeating: 0, count: padding))
@@ -345,7 +345,7 @@ struct ByteReader {
         _ = try take((4 - length % 4) % 4)
     }
 
-    /// Nullterminierter String, auf 4 Byte aufgefüllt.
+    /// Null-terminated string, padded to 4 bytes.
     mutating func cString() throws -> String {
         guard let end = data[offset...].firstIndex(of: 0) else { throw XPCWireError.truncated }
         let length = end - offset + 1

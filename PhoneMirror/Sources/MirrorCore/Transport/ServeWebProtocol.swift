@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// Zerlegt den Bytestrom von `/stream.bin` (pymobiledevice3 `serve-web`) in Bilder.
-/// Jede Nachricht: [4 Byte Länge BE][1 Byte Typ][Access Unit als 4-Byte-längenpräfixierte NALs].
-/// Typ 0 = Keyframe, 1 = Delta, 2 = Keyframe mit Decoder-Reset.
+/// Splits the byte stream of `/stream.bin` (pymobiledevice3 `serve-web`) into frames.
+/// Each message: [4-byte length BE][1-byte type][access unit as 4-byte length-prefixed NALs].
+/// Type 0 = keyframe, 1 = delta, 2 = keyframe with decoder reset.
 public struct ServeWebStreamParser: Sendable {
     private var buffer = Data()
     private var frameIndex = 0
@@ -28,7 +28,7 @@ public struct ServeWebStreamParser: Sendable {
             let accessUnit = buffer[(offset + 5)..<(offset + 4 + length)]
             offset += 4 + length
             guard type <= 2, let annexB = Self.annexB(fromLengthPrefixed: accessUnit) else { continue }
-            // Zeitstempel nur für die Reihenfolge – angezeigt wird sofort (DisplayImmediately).
+            // Timestamp only for ordering – frames are displayed immediately (DisplayImmediately).
             packets.append(VideoPacket(annexB: annexB, timestamp: Double(frameIndex) * frameDuration, resetDecoder: type == 2))
             frameIndex += 1
         }
@@ -50,8 +50,8 @@ public struct ServeWebStreamParser: Sendable {
     }
 }
 
-/// Zerlegt `/audio.bin`: wiederholt [4 Byte Länge BE][Int16-PCM, 48 kHz, Stereo, interleaved].
-/// serve-web dekodiert das AAC-ELD des Geräts bereits mit AudioToolbox.
+/// Splits `/audio.bin`: repeated [4-byte length BE][Int16 PCM, 48 kHz, stereo, interleaved].
+/// serve-web already decodes the device's AAC-ELD with AudioToolbox.
 public struct ServeWebAudioParser: Sendable {
     private var buffer = Data()
 
@@ -74,8 +74,8 @@ public struct ServeWebAudioParser: Sendable {
     }
 }
 
-/// Antwort von `GET /clipboard/events` (Long-Poll, ≈ 25 s).
-/// `text`/`image` sind nur gesetzt, wenn seit `since` auf dem Gerät kopiert wurde.
+/// Response of `GET /clipboard/events` (long poll, ≈ 25 s).
+/// `text`/`image` are only set if something was copied on the device since `since`.
 public struct ServeWebClipboardEvent: Decodable, Sendable, Equatable {
     public struct Image: Decodable, Sendable, Equatable {
         public var type: String?
@@ -87,7 +87,7 @@ public struct ServeWebClipboardEvent: Decodable, Sendable, Equatable {
     public var image: Image?
 }
 
-/// Eine HTTP-Anfrage an `serve-web` (POST mit JSON-Körper).
+/// An HTTP request to `serve-web` (POST with JSON body).
 public struct ServeWebRequest: Sendable, Equatable {
     public var path: String
     public var json: [String: ServeWebValue]
@@ -117,8 +117,8 @@ public enum ServeWebValue: Sendable, Equatable {
     }
 }
 
-/// Übersetzt `InputEvent`s in `serve-web`-Anfragen (`/touch`, `/key`, `/button`).
-/// Die Logik (gehaltene Tasten, Scroll als Wischgeste) steckt im transportneutralen `InputActionEncoder`.
+/// Translates `InputEvent`s into `serve-web` requests (`/touch`, `/key`, `/button`).
+/// The logic (held keys, scroll as swipe gesture) lives in the transport-neutral `InputActionEncoder`.
 public struct ServeWebInputEncoder: Sendable {
     private var actions: InputActionEncoder
 
@@ -133,7 +133,7 @@ public struct ServeWebInputEncoder: Sendable {
         actions.actions(for: event).map(Self.request)
     }
 
-    /// Anfragen für einen Gestenschritt; Wartezeiten übernimmt der Aufrufer.
+    /// Requests for one gesture step; the caller handles the waits.
     public mutating func requests(forStep step: GestureStep) -> [ServeWebRequest] {
         actions.actions(forStep: step).map(Self.request)
     }
@@ -149,7 +149,7 @@ public struct ServeWebInputEncoder: Sendable {
         case .keys(let usages):
             ServeWebRequest(path: "/key", json: ["usages": .ints(usages.map(Int.init))])
         case .button(let button, let action):
-            // serve-web hält die Taste beim „press“ selbst passend lange (Sperren 0,5 s, Siri 1 s).
+            // On “press”, serve-web itself holds the button for the appropriate time (Lock 0.5 s, Siri 1 s).
             ServeWebRequest(path: "/button", json: ["name": .string(button.serveWebName), "state": .string(action?.rawValue ?? "press")])
         }
     }

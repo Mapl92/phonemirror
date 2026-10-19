@@ -3,7 +3,7 @@ import AppKit
 import CoreVideo
 import MirrorCore
 
-/// Zeigt den Videostream an und übersetzt Maus und Tastatur in Geräteeingaben.
+/// Shows the video stream and translates mouse and keyboard into device input.
 @MainActor
 final class MirrorView: NSView {
     var onInput: ((InputEvent) -> Void)?
@@ -14,13 +14,13 @@ final class MirrorView: NSView {
         }
     }
 
-    /// Zeigt genau den Displaybereich mit abgerundeten Ecken. Der Bildinhalt kommt als IOSurface,
-    /// `contentsRect` schneidet Padding (1184×2576 → 1179×2556) bzw. einen Resolution Collapse weg.
+    /// Shows exactly the display area with rounded corners. The image content arrives as an IOSurface;
+    /// `contentsRect` crops away padding (1184×2576 → 1179×2556) or a resolution collapse.
     private let videoLayer = CALayer()
-    /// Zeigt die zurückgerechnete Touch-Position – macht Fehler im Koordinaten-Mapping sichtbar.
+    /// Shows the back-computed touch position – makes errors in the coordinate mapping visible.
     private let touchIndicator = CAShapeLayer()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
-    private let agentBadge = NSTextField(labelWithString: "Agent steuert")
+    private let agentBadge = NSTextField(labelWithString: "Agent in control")
     private var agentBadgeHideTask: Task<Void, Never>?
     private var activeTouch = false
     private let edgeSnapping = EdgeSnapping()
@@ -94,13 +94,13 @@ final class MirrorView: NSView {
 
     // MARK: - Video
 
-    /// Zeigt ein dekodiertes Bild. `visible`: sichtbarer Anteil von links oben (siehe `ContentRectDetector`).
+    /// Shows a decoded image. `visible`: visible fraction from the top left (see `ContentRectDetector`).
     func display(_ pixelBuffer: CVPixelBuffer, visible: CGSize) {
         guard let surface = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         videoLayer.contents = surface
-        // IOSurface-Inhalte haben den Ursprung oben links – der sichtbare Teil beginnt bei (0, 0).
+        // IOSurface contents have their origin at the top left – the visible part starts at (0, 0).
         videoLayer.contentsRect = CGRect(x: 0, y: 0, width: visible.width, height: visible.height)
         CATransaction.commit()
         if !statusLabel.isHidden { statusLabel.isHidden = true }
@@ -110,9 +110,9 @@ final class MirrorView: NSView {
         videoLayer.contents = nil
     }
 
-    /// Zeigt für 3 s „Agent steuert“ und ggf. die vom Agent berührte Stelle.
+    /// Shows “Agent in control” for 3 s and, if given, the spot the agent touched.
     func showAgentActivity(at point: TouchPoint?) {
-        agentBadge.stringValue = "  Agent steuert  "
+        agentBadge.stringValue = "  Agent in control  "
         agentBadge.isHidden = false
         if let point { updateIndicator(point) }
         agentBadgeHideTask?.cancel()
@@ -131,18 +131,18 @@ final class MirrorView: NSView {
         statusLabel.isHidden = false
     }
 
-    // MARK: - Maus → Touch
+    // MARK: - Mouse → touch
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         guard let point = mapper.devicePoint(for: location(of: event)) else { return }
-        // Am Home-Balken beginnend: als Home/App-Umschalter auswerten statt als Touch senden.
+        // Starting at the home bar: interpret as Home/App Switcher instead of sending a touch.
         if homeGesture.began(at: point, time: event.timestamp) {
             updateIndicator(point)
             return
         }
         activeTouch = true
-        // Nahe am oberen/linken Rand beginnende Touches auf die Kante setzen (Mitteilungen, Zurück).
+        // Snap touches that start near the top/left edge onto the edge (Notifications, Back).
         sendTouch(.began, edgeSnapping.snap(point, on: screen))
     }
 
@@ -187,14 +187,14 @@ final class MirrorView: NSView {
         if let point = mapper.devicePoint(for: location(of: event)) { lastPointer = point }
     }
 
-    /// Rechtsklick = Home (wie bei pymobiledevice3 serve-web).
+    /// Right click = Home (as in pymobiledevice3 serve-web).
     override func rightMouseDown(with event: NSEvent) {
         onInput?(.button(.home, isDown: true))
         onInput?(.button(.home, isDown: false))
     }
 
-    /// Trackpad/Mausrad → Wischgeste. Momentum-Phasen werden ignoriert: Nach dem Loslassen
-    /// erzeugt iOS seinen eigenen Schwung, sonst würde doppelt gescrollt.
+    /// Trackpad/mouse wheel → swipe gesture. Momentum phases are ignored: after release
+    /// iOS generates its own momentum, otherwise it would scroll twice.
     override func scrollWheel(with event: NSEvent) {
         guard event.momentumPhase.isEmpty else { return }
         if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
@@ -205,7 +205,7 @@ final class MirrorView: NSView {
            let point = mapper.devicePoint(for: location(of: event)) {
             lastPointer = point
         }
-        // scrollingDelta entspricht beim natürlichen Scrollen der Fingerbewegung.
+        // With natural scrolling, scrollingDelta matches the finger movement.
         let factor = event.hasPreciseScrollingDeltas ? 1.0 : 10.0
         let dx = event.scrollingDeltaX * factor
         let dy = event.scrollingDeltaY * factor
@@ -237,10 +237,10 @@ final class MirrorView: NSView {
         CATransaction.commit()
     }
 
-    // MARK: - Tastatur
+    // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
-        // Gehaltene Tasten wiederholt iOS selbst – Auto-Repeat des Mac nicht weiterreichen.
+        // iOS repeats held keys itself – don't pass on the Mac's auto-repeat.
         guard !event.isARepeat, let usage = KeyMapping.hidUsage(forMacKeyCode: event.keyCode) else { return }
         onInput?(.key(usage: usage, isDown: true))
     }

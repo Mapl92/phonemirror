@@ -2,7 +2,7 @@
 import MirrorCore
 import Testing
 
-/// Punkt in Gerätepunkten (iPhone 15: 393 × 852 pt) → normalisierte Koordinate.
+/// Point in device points (iPhone 15: 393 × 852 pt) → normalized coordinate.
 private func point(x: Double, y: Double) -> TouchPoint {
     TouchPoint(x: UInt16((x / 393 * 65535).rounded()), y: UInt16((y / 852 * 65535).rounded()))
 }
@@ -17,7 +17,7 @@ private func point(x: Double, y: Double) -> TouchPoint {
     }
 
     @Test func bottomAndRightEdgesAreNotSnapped() {
-        // Unten übernimmt der Home-Balken-Erkenner; rechts gibt es keine Systemgeste.
+        // At the bottom the home bar recognizer takes over; on the right there is no system gesture.
         let bottom = point(x: 196, y: 845)
         #expect(snapping.snap(bottom, on: screen) == bottom)
         let right = point(x: 390, y: 400)
@@ -54,7 +54,7 @@ private func point(x: Double, y: Double) -> TouchPoint {
         #expect(began)
         recognizer.moved(to: point(x: 196, y: 700), time: 10.15)
         recognizer.moved(to: point(x: 197, y: 520), time: 10.30)
-        recognizer.moved(to: point(x: 198, y: 519), time: 10.55) // zittert nur – zählt als Halten
+        recognizer.moved(to: point(x: 198, y: 519), time: 10.55) // only jitters – counts as holding
         let result = recognizer.ended(at: point(x: 198, y: 519), time: 10.70)
         #expect(result == .appSwitcher)
     }
