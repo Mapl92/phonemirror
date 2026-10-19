@@ -155,6 +155,25 @@ temporarily lose the iPhone.
 | `MirrorTestSupport`, `HEVCTestStream` | Synthetic HEVC streams (including resolution collapse) |
 | `RTPDumpToH265`, `NativeProbe` | Tools: RTP capture → H.265, and layer tests of the native transport (`swift run native-probe rsd\|video\|audio`) |
 
+## Releasing (maintainers)
+
+`Scripts/release.sh <version>` builds, tests and signs the app with a Developer ID and the hardened runtime,
+notarizes and staples the app and a DMG, writes `SHA256SUMS.txt` and creates a **draft** GitHub release
+(`build/release/`). One-time setup:
+
+1. Developer ID Application certificate in the login keychain (Xcode › Settings › Accounts › Manage Certificates).
+2. Notarization credentials stored for `notarytool`:
+
+   ```bash
+   xcrun notarytool store-credentials phonemirror-notary --apple-id <apple-id> --team-id <team-id>
+   ```
+
+3. GitHub CLI logged in; the working tree must be clean and pushed.
+
+`Scripts/release.sh <version> --dry-run` builds the same bundle with an ad-hoc signature and the hardened runtime,
+without notarization or GitHub, to check that everything still works under the hardened runtime.
+`--no-github` notarizes but skips the GitHub release.
+
 ## License
 
 PhoneMirror is licensed entirely under GPL-3.0-or-later (see [../LICENSE](../LICENSE)); source files carry SPDX

@@ -216,9 +216,10 @@ public enum RSDLocator {
     }
 
     static func processPath(_ pid: Int32) -> String {
-        var buffer = [CChar](repeating: 0, count: 4096)
-        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return "" }
-        return String(cString: buffer)
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return "" }
+        return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
     }
 
     static func run(_ path: String, _ arguments: [String]) -> String? {
