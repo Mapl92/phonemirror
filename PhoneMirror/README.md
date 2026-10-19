@@ -1,172 +1,175 @@
 # PhoneMirror
 
-Eigener Mac-Client für die iPhone-Spiegelung über das Device-Hub-Protokoll (CoreDevice, ab iOS 27).
-Hintergrund und Reverse-Engineering-Befunde: [../FINDINGS.md](../FINDINGS.md).
+A native Mac client for iPhone screen mirroring and control via the Device Hub protocol (CoreDevice, iOS 27 and
+later). Background and reverse-engineering findings: [../FINDINGS.md](../FINDINGS.md).
 
-Getestet mit iPhone 15 und iOS 27.0.1 auf macOS 27.0.1 mit Xcode 27.1:
+Tested with an iPhone 15 on iOS 27.0.1, macOS 27.0.1 and Xcode 27.1:
 
-| Funktion | Stand |
+| Feature | Status |
 |---|---|
-| Bild | ≈ 58 fps, Hardware-Dekodierung, Zuschnitt auf das echte Display |
-| Touch, Tastatur, Tasten | funktionieren |
-| Home-Balken und App-Umschalter | funktionieren |
-| Ton und Zwischenablage | vorhanden |
-| Wiederverbinden und DDI-Mount | automatisch |
+| Video | ≈ 58 fps, hardware decoding, cropped to the actual display |
+| Touch, keyboard, buttons | working |
+| Home indicator and App Switcher | working |
+| Audio and clipboard | available |
+| Reconnect and DDI mount | automatic |
 
-## Voraussetzungen
+> The app's menus are currently in German. Below, menu items are given in English with the German label in
+> parentheses.
 
-- iPhone mit iOS 27, Developer Mode und Einstellungen › Entwickler › „UI-Automation aktivieren“.
-- Das iPhone ist mit diesem Mac gekoppelt (Xcode/Device Hub).
-- Xcode 27 für `devicectl`. Damit mountet die App das Developer Disk Image selbst; das iPhone muss dabei
-  entsperrt sein.
-- Nur für die Verbindungsart „pymobiledevice3“: `uv tool install pymobiledevice3` (≥ 11.36).
+## Requirements
 
-## Bauen und starten
+- iPhone with iOS 27, Developer Mode, and Settings › Developer › "Enable UI Automation" turned on.
+- The iPhone is paired with this Mac (Xcode/Device Hub).
+- Xcode 27 for `devicectl`. The app uses it to mount the Developer Disk Image itself; the iPhone must be unlocked
+  for that.
+- Only for the "pymobiledevice3" connection mode: `uv tool install pymobiledevice3` (≥ 11.36).
+
+## Build and run
 
 ```bash
-swift test                     # Unit-, Pipeline- und Protokolltests
-Scripts/bundle-app.sh          # → build/PhoneMirror.app (mit Icon)
+swift test                     # unit, pipeline and protocol tests
+Scripts/bundle-app.sh          # → build/PhoneMirror.app (with icon)
 open build/PhoneMirror.app
 ```
 
-Ohne Gerät gibt es den Replay-Modus mit einer Testdatei. Die Datei sollte außerhalb von `~/Documents` liegen, sonst
-fragt macOS bei jedem Neubau nach Ordnerzugriff:
+Without a device, there is a replay mode that plays a test file. Keep the file outside `~/Documents`, otherwise
+macOS asks for folder access after every rebuild:
 
 ```bash
 swift run -c release hevc-test-stream /tmp/test.h265 4 1179 2556 collapse
 open build/PhoneMirror.app --args -replay /tmp/test.h265
 ```
 
-## Bedienung
+## Usage
 
-| Eingabe | Wirkung |
+| Input | Effect |
 |---|---|
-| Klicken, Ziehen | Touch |
-| Trackpad-Scrollen | Wischgeste (ohne doppelten Schwung) |
-| Rechtsklick | Home |
-| Tastatur | geht ans iPhone, Hardware-Tastatur-Usages |
-| ⌘1 / ⌘2 / ⌘3 | Homescreen / App-Umschalter / Spotlight |
-| ⌘L, ⌘↑ / ⌘↓ | Sperren, Lautstärke |
-| ⌘⌥T | Ton an/aus |
-| Gerät › Zwischenablage teilen | Abgleich Mac ↔ iPhone an/aus |
-| Gerät › Verbindung | Nativ oder pymobiledevice3 |
-| ⌘+ / ⌘− / ⌘0 | Fenstergröße; Größe und Position werden gespeichert |
+| Click, drag | Touch |
+| Trackpad scrolling | Swipe gesture (without double momentum) |
+| Right-click | Home |
+| Keyboard | Sent to the iPhone as hardware keyboard usages |
+| ⌘1 / ⌘2 / ⌘3 | Home Screen / App Switcher / Spotlight |
+| ⌘L, ⌘↑ / ⌘↓ | Lock, volume |
+| ⌘⌥T | Audio on/off |
+| Device (Gerät) › Share Clipboard (Zwischenablage teilen) | Mac ↔ iPhone clipboard sync on/off |
+| Device (Gerät) › Connection (Verbindung) | Native or pymobiledevice3 |
+| ⌘+ / ⌘− / ⌘0 | Window size; size and position are remembered |
 
-Gesten am Rand:
-- **Home-Balken:** Unten klicken und nach oben ziehen ergibt Home. Mit kurzem Innehalten vor dem Loslassen öffnet
-  sich der App-Umschalter. iOS ignoriert injizierte Touches am unteren Rand, daher der Umweg über die Home-Taste.
-- **Oben und links:** Touches, die bis 12 pt unter der Oberkante bzw. 8 pt neben der linken Kante beginnen,
-  starten exakt auf der Kante. So funktionieren Mitteilungen, Kontrollzentrum und Zurück.
+Edge gestures:
+- **Home indicator:** Clicking at the bottom and dragging up goes Home. Pausing briefly before releasing opens the
+  App Switcher. iOS ignores injected touches at the bottom edge, so PhoneMirror uses the Home button instead.
+- **Top and left:** Touches starting within 12 pt of the top edge or 8 pt of the left edge are snapped exactly onto
+  the edge. That makes Notification Center, Control Center and the back gesture work.
 
-Zwischenablage:
-- Was auf dem iPhone kopiert wird, landet nach etwa einer Sekunde am Mac. Formatierter Text (Safari, Mail,
-  Notizen) kommt als HTML/RTF und zusätzlich als reiner Text.
-- Kopien vom Mac gehen nur aufs iPhone, solange PhoneMirror aktiv ist.
-- Was Apples Universelle Zwischenablage (Handoff) schon übertragen hat (Typ `com.apple.is-remote-clipboard`),
-  schickt PhoneMirror nicht zurück. Sonst würden formatierte iPhone-Kopien zu reinem Text.
+Clipboard:
+- Whatever you copy on the iPhone arrives on the Mac after about one second. Rich text (Safari, Mail, Notes) comes
+  as HTML/RTF plus plain text.
+- Copies made on the Mac are only sent to the iPhone while PhoneMirror is the active app.
+- Content that Apple's Universal Clipboard (Handoff) has already transferred (type `com.apple.is-remote-clipboard`)
+  is not sent back. Otherwise rich-text copies from the iPhone would be turned into plain text.
 
-## Agent-Steuerung (MCP)
+## Agent control (MCP)
 
-PhoneMirror enthält einen MCP-Server, über den KI-Agents das iPhone steuern. Er nutzt dieselbe Verbindung wie
-das Fenster, du siehst also live, was der Agent tut. Ein Hinweis „Agent steuert“ und die berührte Stelle werden
-eingeblendet, und du kannst jederzeit eingreifen.
+PhoneMirror includes an MCP server that lets AI agents control the iPhone. It shares the window's connection, so you
+see live what the agent is doing. An "Agent steuert" (agent in control) badge and the touched spot are shown, and you can step in
+at any time.
 
-- Adresse: `http://127.0.0.1:8765/mcp` (Streamable HTTP, nur lokal), geschützt per Bearer-Token und Origin-Prüfung.
-- Ein- und ausschalten: Gerät › Agent-Steuerung (MCP).
-- **Einbinden in Claude Code:** Gerät › „MCP-Befehl für Claude Code kopieren“ legt den fertigen Befehl in die
-  Mac-Zwischenablage, nicht aufs iPhone. Dann im Terminal einfügen und ausführen:
+- Address: `http://127.0.0.1:8765/mcp` (Streamable HTTP, local only), protected by a bearer token and an Origin check.
+- Turn on/off: Device (Gerät) › Agent Control (Agent-Steuerung (MCP)).
+- **Adding it to Claude Code:** Device (Gerät) › "Copy MCP command for Claude Code" (MCP-Befehl für Claude Code
+  kopieren) puts the complete command on the Mac clipboard (not the iPhone's). Paste it into a terminal and run it:
 
   ```
   claude mcp add --transport http phonemirror http://127.0.0.1:8765/mcp --header "Authorization: Bearer <token>"
   ```
 
-Werkzeuge mit Bedienelement-Baum (über WebDriverAgent, bevorzugt):
+Tools based on the accessibility tree (via WebDriverAgent, preferred):
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `ui_tree` | Nummerierte Liste der Bedienelemente der App im Vordergrund: Typ, Beschriftung, Wert, Position. Etwa 1.000–2.000 Tokens statt eines Bildes |
-| `find_elements` | Suche nach Text und/oder Typ (Button, Cell, TextField …) |
-| `tap_element` | Tippt per ID oder sichtbarem Text. Bedienbare Elemente gewinnen vor reinem Text; passt der Typ nicht, wird ohne Typ gesucht |
-| `type_into` | Textfeld per Beschriftung/Platzhalter antippen und Text einfügen |
+| `ui_tree` | Numbered list of the foreground app's UI elements: type, label, value, frame. Roughly 1,000–2,000 tokens instead of an image |
+| `find_elements` | Search by text and/or type (Button, Cell, TextField …) |
+| `tap_element` | Tap by ID or visible text. Interactive elements win over plain text; if the type doesn't match, the search falls back to any type |
+| `type_into` | Tap a text field by label/placeholder and insert text |
 
-Weitere Werkzeuge:
+Other tools:
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `screenshot` | JPEG des Bildschirms; Bildgröße = Koordinatenraum in Punkten (iPhone 15: 393 × 852) |
-| `device_info` | Verbindung, Bildschirmgröße, Alter des letzten Bildes |
-| `tap`, `double_tap`, `long_press`, `swipe` | Touch-Gesten in Punkten |
-| `type_text` | Text einfügen (Zwischenablage + ⌘V, beliebige Sprache), optional mit Return |
-| `press_key` | Taste mit Modifiern (z. B. ⌘A) |
-| `press_button` | Home, Sperren, Lautstärke, Siri |
-| `system_action` | Home, App-Umschalter, Spotlight, Mitteilungszentrale, Kontrollzentrum |
-| `list_apps`, `launch_app` | Apps auflisten bzw. per Bundle-ID starten (nur Verbindung „Nativ“) |
-| `get_clipboard`, `set_clipboard` | Zwischenablage des iPhones |
-| `wait` | Auf Animationen warten |
+| `screenshot` | JPEG of the screen; image size = coordinate space in points (iPhone 15: 393 × 852) |
+| `device_info` | Connection, screen size, age of the latest frame |
+| `tap`, `double_tap`, `long_press`, `swipe` | Touch gestures in points |
+| `type_text` | Insert text (clipboard + ⌘V, any language), optionally followed by Return |
+| `press_key` | Key with modifiers (e.g. ⌘A) |
+| `press_button` | Home, Lock, volume, Siri |
+| `system_action` | Home, App Switcher, Spotlight, Notification Center, Control Center |
+| `list_apps`, `launch_app` | List apps or launch one by bundle ID (native connection only) |
+| `get_clipboard`, `set_clipboard` | The iPhone's clipboard |
+| `wait` | Wait for animations |
 
-### WebDriverAgent (einmalig einrichten)
+### WebDriverAgent (one-time setup)
 
-Den Bedienelement-Baum liefert [WebDriverAgent](https://github.com/appium/WebDriverAgent) (Appium, BSD-Lizenz).
-Er läuft als UI-Test-Runner auf dem iPhone und muss einmal mit deinem Apple-Entwickler-Team gebaut werden:
+The accessibility tree comes from [WebDriverAgent](https://github.com/appium/WebDriverAgent) (Appium, BSD
+license). It runs as a UI test runner on the iPhone and has to be built once with your Apple developer team:
 
 ```bash
-Scripts/build-wda.sh <Team-ID> [Bundle-ID-Präfix]   # Team-ID z. B. aus `security find-identity -p codesigning -v`
+Scripts/build-wda.sh <Team-ID> [bundle-ID-prefix]   # Team ID e.g. from `security find-identity -p codesigning -v`
 ```
 
-Mit einem kostenlosen Account muss die Bundle-ID weltweit eindeutig sein; dann einen eigenen Präfix angeben
-(z. B. `com.deinname.phonemirror`).
+With a free account, the bundle ID must be globally unique, so pass your own prefix (e.g.
+`com.yourname.phonemirror`).
 
-Danach startet PhoneMirror WDA selbst, sobald die Agent-Steuerung an und das iPhone verbunden ist (≈ 10 s):
-- Mit `xcodebuild test-without-building` und **gebunden an die Tunnel-Adresse** (`TEST_RUNNER_USE_IP`). WDA ist
-  also nicht im WLAN erreichbar, nur über den CoreDevice-Tunnel dieses Macs.
-- Nach einem Tunnelwechsel startet PhoneMirror es neu; beim Beenden oder Abschalten stoppt es.
+After that, PhoneMirror starts WDA itself as soon as agent control is on and the iPhone is connected (≈ 10 s):
+- It uses `xcodebuild test-without-building` and **binds WDA to the tunnel address** (`TEST_RUNNER_USE_IP`), so WDA
+  is not reachable over Wi-Fi, only through this Mac's CoreDevice tunnel.
+- After a tunnel change, PhoneMirror restarts it; quitting the app or turning agent control off stops it.
 - Log: `~/Library/Logs/PhoneMirror/wda.log`
-- Signaturdauer: Mit bezahltem Entwickler-Account gilt die Signatur ein Jahr, mit kostenlosem 7 Tage (dann
-  Skript erneut ausführen).
+- Signing lifetime: one year with a paid developer account, 7 days with a free one (then run the script again).
+- After WDA restarts, iOS may ask for the device passcode to "Enable UI Automation" on the iPhone.
 
-Grenzen:
-- Der Baum zeigt nur, was Apps an Bedienhilfen-Informationen liefern. Spiele, Canvas-Inhalte und unbeschriftete
-  Symbole brauchen weiterhin `screenshot`.
-- `type_text`/`type_into` überschreiben die iPhone-Zwischenablage. Bei aktiver Universeller Zwischenablage
-  landet der Text auch am Mac.
+Limitations:
+- The tree only shows the accessibility information apps provide. Games, canvas content and unlabeled icons still
+  need `screenshot`. Some system apps (e.g. Camera) are not visible to WDA at all.
+- `type_text`/`type_into` overwrite the iPhone clipboard. With Universal Clipboard enabled, the text also ends up on
+  the Mac.
 
-## Verbindungsarten
+## Connection modes
 
-**Nativ (Standard).** Läuft komplett in Swift, ohne Python:
-1. `remotepairingd` (libxpc) liefert den bestehenden CoreDevice-Tunnel.
-2. `nettop` findet den RSD-Port von `remoted`.
-3. Über RemoteXPC (HTTP/2 + XPC) geht es zum Display-, HID- und Pasteboard-Dienst.
-4. Video und Ton kommen per RTP über UDP. Die App schickt RTCP-Receiver-Reports und fordert bei Verlust per
-   PLI ein Keyframe an.
+**Native (default).** Pure Swift, no Python:
+1. `remotepairingd` (libxpc) provides the existing CoreDevice tunnel.
+2. `nettop` finds `remoted`'s RSD port.
+3. RemoteXPC (HTTP/2 + XPC) connects to the display, HID and pasteboard services.
+4. Video and audio arrive as RTP over UDP. The app sends RTCP receiver reports and requests a keyframe via PLI after
+   packet loss.
 
-**pymobiledevice3 (serve-web).** Startet `serve-web --native` als lokale Brücke auf 127.0.0.1 mit
-Zufallspasswort.
+**pymobiledevice3 (serve-web).** Runs `serve-web --native` as a local bridge on 127.0.0.1 with a random password.
 
-Beide Wege teilen sich den Tunnel mit Apples `remoted`. Während PhoneMirror läuft, können Xcode und
-`devicectl` das iPhone zeitweise verlieren.
+Both modes share the tunnel with Apple's `remoted`. While PhoneMirror is running, Xcode and `devicectl` may
+temporarily lose the iPhone.
 
-## Aufbau
+## Architecture
 
-| Modul | Inhalt |
+| Module | Contents |
 |---|---|
-| `MirrorCore` | Transport-Schnittstelle, HEVC (Annex B, Access Units, SampleBuilder, VideoToolbox-Decoder, Collapse-Erkennung), RTP-Depacketizer, Eingabe (TouchMapper, KeyMapping, Gesten, `InputActionEncoder`), serve-web-Transport, DDI-Vorbereitung |
-| `MirrorMCP` | MCP-Server: JSON-RPC 2.0, Streamable HTTP (NWListener), Token/Origin-Schutz |
-| `MirrorNative` | Nativer Transport: XPC-Wire-Format, HTTP/2, RemoteXPC, Tunnel, RSD, CoreDevice-Dienste, Medienangebot, RTP/RTCP, AAC-ELD |
-| `PhoneMirror` | AppKit-App: Fenster, Video-Layer (IOSurface + `contentsRect`), Ton (AVAudioEngine), Zwischenablage, Menüs, Einstellungen |
-| `MirrorTestSupport`, `HEVCTestStream` | Synthetische HEVC-Streams (auch mit Resolution Collapse) |
-| `RTPDumpToH265`, `NativeProbe` | Werkzeuge: RTP-Mitschnitt → H.265 und Schichttests des nativen Transports (`swift run native-probe rsd\|video\|audio`) |
+| `MirrorCore` | Transport interface, HEVC (Annex B, access units, sample builder, VideoToolbox decoder, collapse detection), RTP depacketizer, input (TouchMapper, KeyMapping, gestures, `InputActionEncoder`), serve-web transport, DDI preparation |
+| `MirrorMCP` | MCP server: JSON-RPC 2.0, Streamable HTTP (NWListener), token/Origin protection |
+| `MirrorNative` | Native transport: XPC wire format, HTTP/2, RemoteXPC, tunnel, RSD, CoreDevice services, media offer, RTP/RTCP, AAC-ELD |
+| `PhoneMirror` | AppKit app: window, video layer (IOSurface + `contentsRect`), audio (AVAudioEngine), clipboard, menus, settings |
+| `MirrorTestSupport`, `HEVCTestStream` | Synthetic HEVC streams (including resolution collapse) |
+| `RTPDumpToH265`, `NativeProbe` | Tools: RTP capture → H.265, and layer tests of the native transport (`swift run native-probe rsd\|video\|audio`) |
 
-## Lizenz
+## License
 
-PhoneMirror steht vollständig unter der GPL-3.0-or-later (siehe [../LICENSE](../LICENSE)); die Dateien tragen
-SPDX-Köpfe. `MirrorNative` ist eng an pymobiledevice3 (ebenfalls GPL-3.0) angelehnt. Haftungsausschluss und
-Markenhinweis stehen im [Haupt-README](../README.md).
+PhoneMirror is licensed entirely under GPL-3.0-or-later (see [../LICENSE](../LICENSE)); source files carry SPDX
+headers. `MirrorNative` is closely modeled on pymobiledevice3 (also GPL-3.0). The disclaimer and trademark notice are
+in the [main README](../README.md).
 
-## Offen
+## Open issues
 
-- **Bild-Latenz:** Gefühlt messen und gegebenenfalls RCTL-Feedback ergänzen (in pymobiledevice3 standardmäßig aus).
-- **Displaygröße:** Wird nicht vom Gerät gelesen; voreingestellt ist das iPhone 15.
-- **Zwischenablage nativ:** Abfrage einmal pro Sekunde statt Darwin-Notification. Gelesen werden nur die primären
-  Typen; der Abruf aller Darstellungen blockiert den iOS-Dienst (≥ 8 s, laut pymobiledevice3 bis 64 s).
-- **Probe-Tool:** `native-probe` nicht parallel zur laufenden App benutzen. Die zweite RSD-Verbindung stört deren
-  Streams; die App verbindet sich zwar neu, Tests sind dann aber verfälscht.
+- **Video latency:** Measure it properly and add RCTL feedback if needed (disabled by default in pymobiledevice3).
+- **Display size:** Not read from the device; the iPhone 15 is the default.
+- **Native clipboard:** Polled once per second instead of using a Darwin notification. Only the primary types are
+  read; fetching all representations blocks the iOS service (≥ 8 s, up to 64 s according to pymobiledevice3).
+- **Probe tool:** Don't run `native-probe` while the app is running. The second RSD connection disrupts the app's
+  streams; the app reconnects, but the measurements are skewed.
+- **UI language:** Menus and in-app text are German only so far.

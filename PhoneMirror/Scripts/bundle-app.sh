@@ -1,7 +1,8 @@
 #!/bin/zsh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Baut PhoneMirror (Release) und verpackt die Executable als .app-Bundle in build/.
-# Aufruf: Scripts/bundle-app.sh            → build/PhoneMirror.app
+# Builds PhoneMirror (release) and packages the executable as an .app bundle in build/.
+# Usage: Scripts/bundle-app.sh             → build/PhoneMirror.app
+# Replay mode without a device:
 #         swift run -c release hevc-test-stream /tmp/test.h265 4 1179 2556 collapse
 #         open build/PhoneMirror.app --args -replay /tmp/test.h265
 set -euo pipefail

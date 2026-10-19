@@ -1,136 +1,136 @@
-# iPhone Mirroring – Reverse-Engineering-Befunde
+# iPhone Mirroring – Reverse-Engineering Findings
 
-Stand: 2026-10-19 · macOS 26.5.2 (25F84), arm64 · iPhone Mirroring 1.6 (98.5) · Xcode 26.4
-Methode (Abschnitte 1–3): rein statisch (Bundle, Entitlements, `dyld_info`-Exports/Strings aus dem Shared Cache) plus
-lesende Abfragen (`dns-sd -B`, `devicectl device info details`). Ab Abschnitt 4: Tests am eigenen, gekoppelten iPhone
-und Vergleich mit dem quelloffenen pymobiledevice3. Ziel ist Interoperabilität; Apple-Code wird weder wiedergegeben
-noch verändert.
+As of 2026-10-19 · macOS 26.5.2 (25F84), arm64 · iPhone Mirroring 1.6 (98.5) · Xcode 26.4
+Method (sections 1–3): purely static (bundle, entitlements, `dyld_info` exports/strings from the shared cache) plus
+read-only queries (`dns-sd -B`, `devicectl device info details`). From section 4 on: tests against the author's own
+paired iPhone and comparison with the open-source pymobiledevice3. The goal is interoperability; no Apple code is
+reproduced or modified.
 
-Dieses Dokument ist ein chronologisches Forschungsprotokoll. Frühe Abschnitte geben den damaligen Stand wieder und sind
-teils durch spätere überholt.
+This document is a chronological research log. Early sections reflect the state at the time and are partly
+superseded by later ones.
 
-Legende: **[B]** beobachtet · **[I]** abgeleitet · **[?]** offen
+Legend: **[O]** observed · **[D]** derived · **[?]** open
 
-## 1. Bausteine auf dem Mac
+## 1. Building blocks on the Mac
 
-| Schicht | Komponente | Rolle |
+| Layer | Component | Role |
 |---|---|---|
-| App | `/System/Applications/iPhone Mirroring.app` (`com.apple.ScreenContinuity`), dünne SwiftUI-Hülle | [B] Linkt nur `ScreenContinuityUI` (gebündelt), `ScreenSharingKit`, `ScreenContinuityServices` |
-| Engine | `ScreenSharingKit.framework` (privat) | [B] Session, Medien-Transport, HID, Texteingabe, Auth, Telemetrie |
-| Geräte/Pairing | `ScreenContinuityServices.framework` | [B] `CompanionDeviceManager` (`startSession`, `pairDevice`), `CompanionDevice` (`remoteScreenPairing`, `deviceScreen`, `proximity`), `ContinuityEligibility.isiPhoneMirroringEligible`, `ContinuityLaunchRequest` (App/Benachrichtigung/Widget/Live Activity) |
-| Daemon | `/usr/libexec/rapportd`, Klasse `RPRemoteDisplayDaemon`, Mach-Service `com.apple.RemoteDisplay` | [B] Discovery, Pairing, Verbindungsaufbau |
-| Medien | `AVConference.framework` (FaceTime-Medien-Engine), Modus `NearbyScreenSharing` | [B] Codecs H264/HEVC, OPUS; RTP/RTCP |
-| Eingabe | `UniversalHID`/`UniversalHIDKit` | [B] virtuelle Geräte „iPhone Mirroring Mouse“ / „iPhone Mirroring Keyboard“, HID-Reports an das iPhone |
-| Text | `RemoteTextInput` (`com.apple.rti-screencontinuity`) | [B] Texteingabe-Sessions |
-| Mitteilungen | `ReplicatorServices` | [B] gespiegelte iPhone-Mitteilungen |
+| App | `/System/Applications/iPhone Mirroring.app` (`com.apple.ScreenContinuity`), thin SwiftUI shell | [O] Links only `ScreenContinuityUI` (bundled), `ScreenSharingKit`, `ScreenContinuityServices` |
+| Engine | `ScreenSharingKit.framework` (private) | [O] Session, media transport, HID, text input, auth, telemetry |
+| Devices/pairing | `ScreenContinuityServices.framework` | [O] `CompanionDeviceManager` (`startSession`, `pairDevice`), `CompanionDevice` (`remoteScreenPairing`, `deviceScreen`, `proximity`), `ContinuityEligibility.isiPhoneMirroringEligible`, `ContinuityLaunchRequest` (app/notification/widget/Live Activity) |
+| Daemon | `/usr/libexec/rapportd`, class `RPRemoteDisplayDaemon`, Mach service `com.apple.RemoteDisplay` | [O] Discovery, pairing, connection setup |
+| Media | `AVConference.framework` (FaceTime media engine), mode `NearbyScreenSharing` | [O] Codecs H264/HEVC, OPUS; RTP/RTCP |
+| Input | `UniversalHID`/`UniversalHIDKit` | [O] Virtual devices "iPhone Mirroring Mouse" / "iPhone Mirroring Keyboard", HID reports to the iPhone |
+| Text | `RemoteTextInput` (`com.apple.rti-screencontinuity`) | [O] Text input sessions |
+| Notifications | `ReplicatorServices` | [O] Mirrored iPhone notifications |
 
-## 2. Ablauf (rekonstruiert)
+## 2. Flow (reconstructed)
 
-1. **Eligibility** [B]: `LSEligibilityInstallPredicate` (Domain 27) und os_eligibility-Datei. Fehlertext:
-   „not available in your country or region“. MDM-Schalter `com.apple.applicationaccess` → `allowiPhoneMirroring`.
-2. **Discovery** [B]: BLE `NearbyActionV2` (Advertiser/Scanner), BLE-„NeedsAWDL“-Signal, Bonjour `_rdlink._tcp`
-   (Infrastruktur-WLAN und AWDL). Auth-Tag in Bonjour-TXT (`_serverBonjourAuthTagString`).
-3. **Vertrauen/Pairing** [B]: Rapport Pair-Verify (`RPPairingDistributedActor.startPairVerify`, LTPK),
-   `remoteScreenPairing`, Octagon/iCloud-Keychain (`com.apple.private.octagon`, Fehler `iCloudNeedsRepair`).
-   Mac-Login über Sharing-Unlock-Manager (`pairDeviceForMacUnlock`, `unlockWithAuthenticationToken`).
-4. **Transport** [B]: Rapport-Stream mit Typen `UDPSocket` / `RPCnx` / `UDPNWPath`; Kontrollkanal
-   (`com.apple.oneness.sessionAndHIDMessages`); Modi `wired` / `wirelessly`.
-5. **Medien** [B]: AVConference-Streams `com.apple.MediaTransport.video` / `.audio`. Offer/Answer
-   (`negotiationOffer`/`negotiationAnswer`) laufen über den Kontrollkanal.
-6. **iPhone-Seite** [I]: `com.apple.ScreenContinuityShell` rendert eine eigene Szene/Anzeige, während das Telefon
-   gesperrt bleibt (Fehler `springBoardInvalidated`, `deviceUnlockedDuringSession`, `missingDisplayConfiguration`).
-7. **Eingabe** [B]: HID-Reports, Tap-/Drag-Gesten, Drag & Drop, RTI-Text, Accessibility-Übersetzung, Orientierung.
+1. **Eligibility** [O]: `LSEligibilityInstallPredicate` (domain 27) and an os_eligibility file. Error text:
+   "not available in your country or region". MDM switch `com.apple.applicationaccess` → `allowiPhoneMirroring`.
+2. **Discovery** [O]: BLE `NearbyActionV2` (advertiser/scanner), BLE "NeedsAWDL" signal, Bonjour `_rdlink._tcp`
+   (infrastructure Wi-Fi and AWDL). Auth tag in the Bonjour TXT record (`_serverBonjourAuthTagString`).
+3. **Trust/pairing** [O]: Rapport pair-verify (`RPPairingDistributedActor.startPairVerify`, LTPK),
+   `remoteScreenPairing`, Octagon/iCloud Keychain (`com.apple.private.octagon`, error `iCloudNeedsRepair`).
+   Mac login via the Sharing unlock manager (`pairDeviceForMacUnlock`, `unlockWithAuthenticationToken`).
+4. **Transport** [O]: Rapport stream with types `UDPSocket` / `RPCnx` / `UDPNWPath`; control channel
+   (`com.apple.oneness.sessionAndHIDMessages`); modes `wired` / `wirelessly`.
+5. **Media** [O]: AVConference streams `com.apple.MediaTransport.video` / `.audio`. Offer/answer
+   (`negotiationOffer`/`negotiationAnswer`) go over the control channel.
+6. **iPhone side** [D]: `com.apple.ScreenContinuityShell` renders its own scene/display while the phone stays locked
+   (errors `springBoardInvalidated`, `deviceUnlockedDuringSession`, `missingDisplayConfiguration`).
+7. **Input** [O]: HID reports, tap/drag gestures, drag & drop, RTI text, accessibility translation, orientation.
 
-## 3. Zweiter Pfad: Xcode/CoreDevice „View Device Screen“
+## 3. Second path: Xcode/CoreDevice "View Device Screen"
 
-- [B] `CoreDevice.framework` bietet die Actions `com.apple.coredevice.action.mediastream{getsupportinfo,start,status,stop}`
-  und die Features `remote.hid.digitizer`, `remote.hid.button`, `remote.hid.scroll`, `remote.universalhid`,
+- [O] `CoreDevice.framework` offers the actions `com.apple.coredevice.action.mediastream{getsupportinfo,start,status,stop}`
+  and the features `remote.hid.digitizer`, `remote.hid.button`, `remote.hid.scroll`, `remote.universalhid`,
   `devicecontrol.orientation`.
-- [B] AVConference kennt den Modus `CoreDeviceScreenSharing` mit dem Gerätedienst `com.apple.CoreDevice.dtremotedisplayd`.
-- [B] Das iPhone 15 (iOS 26.5, Developer Mode an, über `localNetwork` verbunden) meldet
+- [O] AVConference knows the mode `CoreDeviceScreenSharing` with the device service `com.apple.CoreDevice.dtremotedisplayd`.
+- [O] The iPhone 15 (iOS 26.5, Developer Mode on, connected via `localNetwork`) reports
   `com.apple.coredevice.feature.viewdevicescreen`; `screenViewingURL = devices://device/open?id=…`.
-- [B] `CoreDeviceService.xpc` trägt `com.apple.private.CoreDevice.canViewDeviceDisplay` und `…CoreDevice.hid`.
-  `devicectl` hat keine Entitlements und kein Mediastream-Kommando.
-- [?] Ob ein fremder Client `mediastreamstart` über CoreDeviceService aufrufen darf, ist ungeprüft.
-- [?] Ebenso ungeprüft: `dtremotedisplayd` direkt per RemoteXPC/RSD-Tunnel ansprechen.
+- [O] `CoreDeviceService.xpc` carries `com.apple.private.CoreDevice.canViewDeviceDisplay` and `…CoreDevice.hid`.
+  `devicectl` has no entitlements and no media stream command.
+- [?] Whether a third-party client may call `mediastreamstart` through CoreDeviceService is untested.
+- [?] Also untested: talking to `dtremotedisplayd` directly over RemoteXPC/the RSD tunnel.
 
-## 4. Probe: CoreDevice-Media-Stream aus eigenem Tool (2026-10-19)
+## 4. Probe: CoreDevice media stream from a custom tool (2026-10-19)
 
-Werkzeug: eine kleine Probe (nicht im Repository). Ein handgeschriebenes Swift-Interface bildet die benötigten
-exportierten Symbole nach. Das Tool ruft nur `getMediaStreamSupportInfo` und `getMediaStreamServerStatus` auf.
+Tool: a small probe (not included in the repository). A hand-written Swift interface declares the required exported
+symbols. The tool only calls `getMediaStreamSupportInfo` and `getMediaStreamServerStatus`.
 
-- [B] Ein eigenes, ad-hoc signiertes Tool ohne Entitlements kann `DeviceManager.shared` nutzen. Der XPC-Check-in bei
-  `com.apple.CoreDevice.CoreDeviceService` gelingt, und die Geräteliste kommt an (iPhone + Watch).
-- [B] Beide Media-Stream-Aufrufe enden mit `CoreDeviceError 9011`: „Unable to complete operation as this is using
-  obsolete functionality … CoreDevice, DeviceKit, and Devices.app“.
-- [B] Der Fehler entsteht **im Client** (`CoreDevice.framework`). Der Text steht nur dort, und das Service-Log
-  zeigt für beide Läufe nur Check-in und Disconnect, keine Action.
-- [B] Das iPhone meldet keine `mediastream*`- und keine `remote.hid.*`-Capability, nur `viewdevicescreen` und
-  generisch `com.apple.dt.serviceconnection.create` / `servicesocket.create`.
-- [B] Unter den 75 RSD-Diensten des iPhones (`/usr/libexec/remotectl show`) ist kein Display-, HID- oder Media-Dienst.
-- [B] Das iOS-DDI (CoreDevice-518.27) enthält zwar `CoreDeviceMediaStreamSupport.framework`, aber keinen
-  `dtremotedisplayd`-LaunchDaemon, und kein anderes DDI-Binary referenziert das Framework.
-- [B] Der Handler für `devices://` („Devices.app“, `com.apple.dt.Devices`) ist auf diesem System nicht installiert.
-  Xcode 26.4 referenziert die URL nicht.
-- [I] Der alte Weg (CoreDevice-Actions + AVConference-Modus `CoreDeviceScreenSharing`) ist in dieser Version
-  stillgelegt. Er wird offenbar durch einen Nachfolger aus „DeviceKit + Devices.app“ ersetzt, der hier noch nicht ausgeliefert ist.
-- [B] Nebenbefund: Laut `remotectl` (`RegionInfo`) ist das Testgerät ein EU-Gerät. Das passt zur Region-Sperre aus
-  Abschnitt 2.
+- [O] A custom, ad-hoc signed tool without entitlements can use `DeviceManager.shared`. The XPC check-in with
+  `com.apple.CoreDevice.CoreDeviceService` succeeds and the device list arrives (iPhone + Watch).
+- [O] Both media stream calls fail with `CoreDeviceError 9011`: "Unable to complete operation as this is using
+  obsolete functionality … CoreDevice, DeviceKit, and Devices.app".
+- [O] The error is raised **in the client** (`CoreDevice.framework`). The text only exists there, and the service log
+  shows only check-in and disconnect for both runs, no action.
+- [O] The iPhone reports no `mediastream*` and no `remote.hid.*` capability, only `viewdevicescreen` and the generic
+  `com.apple.dt.serviceconnection.create` / `servicesocket.create`.
+- [O] Among the iPhone's 75 RSD services (`/usr/libexec/remotectl show`) there is no display, HID or media service.
+- [O] The iOS DDI (CoreDevice-518.27) does contain `CoreDeviceMediaStreamSupport.framework`, but no
+  `dtremotedisplayd` launch daemon, and no other DDI binary references the framework.
+- [O] The handler for `devices://` ("Devices.app", `com.apple.dt.Devices`) is not installed on this system.
+  Xcode 26.4 does not reference the URL.
+- [D] The old path (CoreDevice actions + AVConference mode `CoreDeviceScreenSharing`) is disabled in this version.
+  It is apparently being replaced by a successor made of "DeviceKit + Devices.app" that has not shipped here yet.
+- [O] Side note: according to `remotectl` (`RegionInfo`), the test device is an EU device. That matches the regional
+  restriction from section 2.
 
-## 5. Recherche: Device Hub („Devices.app“) – Stand 2026-10-19
+## 5. Research: Device Hub ("Devices.app") – as of 2026-10-19
 
-Quellen (Web, nicht lokal verifiziert):
-WWDC26 Session 260 „Get the most out of Device Hub“; Michael Tsai, „Xcode 27’s Device Hub“ (25.06.2026);
-Apple Personal Safety Guide „Manage Device Hub access“; GitHub: getsentry/MobileBuildMCP#519,
+Sources (web, not verified locally):
+WWDC26 session 260 "Get the most out of Device Hub"; Michael Tsai, "Xcode 27's Device Hub" (2026-06-25);
+Apple Personal Safety Guide "Manage Device Hub access"; GitHub: getsentry/MobileBuildMCP#519,
 JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-mirror-rs, boa-z/devicehub-mask.
 
-- **Device Hub** ist eine eigenständige Mac-App, die mit **Xcode 27** ausgeliefert wird und die Simulator-App ersetzt
-  (WWDC26). Kompaktfenster und Vollfenster zeigen einen Live-Bildschirm mit Klick, Drag, Scroll, Trackpad-Gesten,
-  „Capture Keyboard“, Home/Rotation/Screenshot sowie Wireless-Pairing („Pair Nearby Device“, PIN).
-- [I] „Devices.app“ / `com.apple.dt.Devices` aus der 9011-Fehlermeldung ist sehr wahrscheinlich Device Hub. Der
-  Bundle-Name ist in den Quellen nicht bestätigt.
-- **Bildschirm-Fernsteuerung nur mit iOS 27 auf dem Zielgerät** (Tsai, unter Berufung auf Troughton-Smith; dieser
-  wünscht sich einen Backport auf iOS 26/18 per DDI). Das passt zu Abschnitt 4: Unter Xcode 26.4 und iOS 26.5 ist
-  der alte Pfad stillgelegt und der neue nicht vorhanden.
-- Voraussetzungen laut Quellen: Developer Mode, Pairing (USB oder lokales Netz).
-  - Laut MobileBuildMCP#519 (unbestätigt) zusätzlich ab iOS 26+: Settings › Developer › UI Automation › „Enable UI Automation“
-    bzw. „Paired Mac computers can remotely view and control this iPhone“.
-  - Apple führt Sitzungsprotokolle unter Safety Check; abschalten lässt sich der Zugriff über Developer Mode aus.
-- Neue CoreDevice-Features (iOS 27): `remote.hid.digitizer`, `remote.hid.keyboard`, `remote.hid.button`,
-  `remote.hid.scroll`, `remote.universalhid`, `viewdevicescreen`. Video läuft als HEVC-Stream über den
-  CoreDevice/RemoteXPC-Tunnel (laut Community-Projekten), nicht über AVConference/Rapport wie bei iPhone Mirroring.
-- Keine offizielle API: `devicectl` (Xcode 27 Beta) hat `capture`/`appResize`, aber kein Input- oder Stream-Kommando.
-- **Drittimplementierungen existieren bereits:**
-  - `idevice` (Rust) bzw. `pymobiledevice3` implementieren Tunnel, RSD, Display-Transport und Universal HID, z. B.
+- **Device Hub** is a standalone Mac app that ships with **Xcode 27** and replaces the Simulator app (WWDC26).
+  Compact and full windows show a live screen with click, drag, scroll, trackpad gestures, "Capture Keyboard",
+  Home/rotation/screenshot, and wireless pairing ("Pair Nearby Device", PIN).
+- [D] "Devices.app" / `com.apple.dt.Devices` from the 9011 error message is very likely Device Hub. The bundle name
+  is not confirmed by the sources.
+- **Remote screen control only with iOS 27 on the target device** (Tsai, citing Troughton-Smith, who hopes for a
+  backport to iOS 26/18 via the DDI). This matches section 4: with Xcode 26.4 and iOS 26.5 the old path is disabled
+  and the new one is missing.
+- Requirements according to the sources: Developer Mode, pairing (USB or local network).
+  - According to MobileBuildMCP#519 (unconfirmed), additionally from iOS 26+: Settings › Developer › UI Automation ›
+    "Enable UI Automation" or "Paired Mac computers can remotely view and control this iPhone".
+  - Apple records session logs under Safety Check; access can be turned off by disabling Developer Mode.
+- New CoreDevice features (iOS 27): `remote.hid.digitizer`, `remote.hid.keyboard`, `remote.hid.button`,
+  `remote.hid.scroll`, `remote.universalhid`, `viewdevicescreen`. Video runs as an HEVC stream over the
+  CoreDevice/RemoteXPC tunnel (according to community projects), not over AVConference/Rapport like iPhone Mirroring.
+- No official API: `devicectl` (Xcode 27 beta) has `capture`/`appResize`, but no input or stream command.
+- **Third-party implementations already exist:**
+  - `idevice` (Rust) and `pymobiledevice3` implement the tunnel, RSD, display transport and Universal HID, e.g.
     `pymobiledevice3 developer core-device universal-hid-service tap -- 32768 32768`.
-  - `iphone-mirror-rs` ist ein Linux-Viewer (GPL-3.0), getestet mit iPhone 15 / iOS 27 über WLAN: rund 60 fps und
-    ca. 59 ms synthetische Latenz, ohne Audio.
-  - `device-hub-ios` (iOS-Client, Xcode 27.1) und `devicehub-mask` (AGPL-3.0, Browser/WebCodecs).
-  - `iPhone-Mirroring-Device-Hub` ist nur ein AppleScript-Wrapper um Apples Device Hub, ausdrücklich als Ersatz für
-    Regionen ohne iPhone Mirroring gedacht.
-- Unterschiede zu iPhone Mirroring:
-  - Device Hub braucht Developer Mode und Pairing.
-  - Mitteilungs-Spiegelung und App-Start aus dem Mac-Dock fehlen.
-  - Ein Hinweis auf eine Regionssperre fand sich in den Quellen nicht. Laut ALEXoicu verbindet Device Hub auch bei
-    gesperrtem iPhone, und die Entsperrung per Code ist über den Mirror möglich.
+  - `iphone-mirror-rs` is a Linux viewer (GPL-3.0), tested with iPhone 15 / iOS 27 over Wi-Fi: about 60 fps and
+    about 59 ms synthetic latency, without audio.
+  - `device-hub-ios` (iOS client, Xcode 27.1) and `devicehub-mask` (AGPL-3.0, browser/WebCodecs).
+  - `iPhone-Mirroring-Device-Hub` is only an AppleScript wrapper around Apple's Device Hub, explicitly meant as a
+    substitute in regions without iPhone Mirroring.
+- Differences from iPhone Mirroring:
+  - Device Hub requires Developer Mode and pairing.
+  - Notification mirroring and launching apps from the Mac Dock are missing.
+  - The sources mention no regional restriction. According to ALEXoicu, Device Hub also connects to a locked
+    iPhone, and unlocking with the passcode works through the mirror.
 
-### Dienstnamen laut pymobiledevice3 11.36.0 (lokal installiert, Hilfetexte)
+### Service names according to pymobiledevice3 11.36.0 (installed locally, help texts)
 
-- Display: `com.apple.coredevice.displayservice` mit den Kommandos `get-media-support-info`,
-  `get-media-stream-server-status`, `start-video-stream` (RTP/HEVC), `start-audio-stream`, `serve-web` und `serve-vnc`.
-  Auf dem iPhone läuft dafür der Daemon `dtremotedisplayd`.
-- Eingabe: `com.apple.coredevice.hid.universalhidservice` (Kommando `universal-hid-service`) sowie `hid` für Tasten.
-- Weitere nützliche Funktionen: `launch-application`, `list-apps`, `fetch-app-icon`, `paste`/`copy` (Zwischenablage),
+- Display: `com.apple.coredevice.displayservice` with the commands `get-media-support-info`,
+  `get-media-stream-server-status`, `start-video-stream` (RTP/HEVC), `start-audio-stream`, `serve-web` and `serve-vnc`.
+  On the iPhone, the daemon `dtremotedisplayd` handles it.
+- Input: `com.apple.coredevice.hid.universalhidservice` (command `universal-hid-service`) and `hid` for buttons.
+- Other useful functions: `launch-application`, `list-apps`, `fetch-app-icon`, `paste`/`copy` (clipboard),
   `get-lockstate`, `rotate`, `screen-capture`.
-- [B] Unter iOS 26.5 ist `com.apple.coredevice.displayservice` nicht in der RSD-Liste des iPhones (Abschnitt 4).
+- [O] On iOS 26.5, `com.apple.coredevice.displayservice` is not in the iPhone's RSD list (section 4).
 
-### Geräteseite unter iOS 27 (DDI aus Xcode 27.1, Build 27A9275) – lokal geprüft
+### Device side on iOS 27 (DDI from Xcode 27.1, build 27A9275) – checked locally
 
-- [B] Das iPhone 15 läuft mit iOS 27.0.1 (24A446), Developer Mode an. Der Tunnel läuft über `localNetwork`,
-  mit einer IPv6-ULA-Adresse als Tunnel-IP (`fdxx:…::1`).
-- [B] Ohne gemountetes DDI fehlen Display/HID im RSD-Verzeichnis (65 Dienste). Das Mounten schlägt bei gesperrtem
-  iPhone fehl (CoreDeviceError 12040 bzw. 10003 „device was still locked“).
-- [B] Das DDI enthält drei neue LaunchDaemons (alle `UserName mobile`, `UsesRemoteXPC`):
+- [O] The iPhone 15 runs iOS 27.0.1 (24A446) with Developer Mode on. The tunnel runs over `localNetwork`, with an
+  IPv6 ULA address as tunnel IP (`fdxx:…::1`).
+- [O] Without a mounted DDI, display/HID are missing from the RSD directory (65 services). Mounting fails while the
+  iPhone is locked (CoreDeviceError 12040 or 10003 "device was still locked").
+- [O] The DDI contains three new launch daemons (all `UserName mobile`, `UsesRemoteXPC`):
 
 | Daemon | RemoteService | RequireEntitlement | Features |
 |---|---|---|---|
@@ -140,111 +140,111 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
 | `dtuhidd` | `com.apple.coredevice.hid.universalhidservice` | `com.apple.private.CoreDevice.hid` | remote.universalhidservice |
 | `dthidd` | `com.apple.coredevice.devicecontrol` | `com.apple.private.CoreDevice.devicecontrol` | remote.devicecontrol.orientation |
 
-- [B] Nach dem Entsperren mountet `devicectl device info ddiServices` das DDI (`isCryptexDDI: true`). Danach meldet
-  das RSD-Verzeichnis 86 Dienste, darunter alle fünf aus der Tabelle.
+- [O] After unlocking, `devicectl device info ddiServices` mounts the DDI (`isCryptexDDI: true`). The RSD directory
+  then reports 86 services, including all five from the table.
 
-### Erster echter Stream (2026-10-19, iPhone 15 / iOS 27.0.1, WLAN)
+### First real stream (2026-10-19, iPhone 15 / iOS 27.0.1, Wi-Fi)
 
-- [B] Der System-Tunnel (`fdxx:…::1`) ist für normale Prozesse nicht erreichbar (`Errno 51`).
-- [B] `pymobiledevice3 … --native` (über Apples `remotepairingd`, ohne Root, ohne Entitlements, ohne neue Kopplung)
-  funktioniert. `RequireEntitlement` blockiert also keine gekoppelten Hosts.
-- [B] `get-media-support-info`: `avcFrameworkVersion 2235.63.1.2`, `supportedFeatures 972` (gespiegeltes
-  Hauptdisplay, System-Audio, virtuelles externes Display, Stream nach Display-ID, Display-Info, Screenshot).
-- [B] `start-video-stream --duration 5`: 728 RTP-Pakete, daraus 264 Bilder, 0 verloren, ffmpeg dekodiert fehlerfrei.
-  - RTP nach RFC 7798, PT 100. Am Anfang ein Aggregation Packet (VPS/SPS/PPS), sonst FUs. Header-Extensions
-    (Profile `0x9001`/`0x9011`) und rtcp-mux (PT 72 = Sender Report).
-  - **Videotakt 24 kHz**: ≈ 400 Ticks pro Bild, ≈ 55–60 fps.
-  - **Nur ein IDR zu Beginn**, danach ausschließlich TRAIL_R. Bei Paketverlust braucht es eine Wiederanlauf-Strategie
-    (neuer Stream oder Keyframe-Anforderung, noch offen).
-  - **Kodiert 1184 × 2576** (HEVC Main, yuvj420p) für ein Display von 1179 × 2556 (`get-display-info`:
-    `nativeSize 1179×2556`, `pointScale 3`). Aufgefüllt wird rechts/unten (Inhalt endet in Zeile 2555), daher schneidet
-    PhoneMirror auf den Displaybereich zu.
-- [B] `get-display-info` listet zusätzlich ein externes „Wireless-4“-Display (displayId 7).
-- [B] PhoneMirror spielt den echten Mitschnitt korrekt zugeschnitten ab (`rtp-dump-to-h265` → `-replay`).
+- [O] The system tunnel (`fdxx:…::1`) is not reachable for ordinary processes (`Errno 51`).
+- [O] `pymobiledevice3 … --native` (through Apple's `remotepairingd`, without root, without entitlements, without
+  new pairing) works. So `RequireEntitlement` does not block paired hosts.
+- [O] `get-media-support-info`: `avcFrameworkVersion 2235.63.1.2`, `supportedFeatures 972` (mirrored main display,
+  system audio, virtual external display, stream by display ID, display info, screenshot).
+- [O] `start-video-stream --duration 5`: 728 RTP packets, yielding 264 frames, 0 lost; ffmpeg decodes without errors.
+  - RTP per RFC 7798, PT 100. One aggregation packet (VPS/SPS/PPS) at the start, FUs otherwise. Header extensions
+    (profiles `0x9001`/`0x9011`) and rtcp-mux (PT 72 = sender report).
+  - **24 kHz video clock**: ≈ 400 ticks per frame, ≈ 55–60 fps.
+  - **Only one IDR at the start**, then exclusively TRAIL_R. Packet loss needs a recovery strategy (new stream or
+    keyframe request, still open at that point).
+  - **Encoded at 1184 × 2576** (HEVC Main, yuvj420p) for a 1179 × 2556 display (`get-display-info`:
+    `nativeSize 1179×2556`, `pointScale 3`). Padding is on the right/bottom (content ends at row 2555), so
+    PhoneMirror crops to the display area.
+- [O] `get-display-info` additionally lists an external "Wireless-4" display (displayId 7).
+- [O] PhoneMirror plays the real capture back correctly cropped (`rtp-dump-to-h265` → `-replay`).
 
-### Live-Betrieb über serve-web (2026-10-19)
+### Live operation via serve-web (2026-10-19)
 
-- [B] PhoneMirror startet `serve-web --native` als Brücke. Bis zum ersten Bild vergehen ≈ 4 s.
-  - Home (Indigo-HID), Touch (`/touch` contact/release, 0…65535) und Tastatur (`/key` mit der Menge gehaltener
-    HID-Usages) wirken am iPhone: Home-Wechsel, Spotlight per Tipp, Texteingabe.
-  - Beim Beenden stoppt der Prozess sauber (Status 0).
-- [B] Laut pymobiledevice3-Quelltext:
-  - Ohne RTCP-Receiver-Reports beendet das iPhone die Session nach ≈ 20 s.
-  - PLI fordert einen neuen IDR an.
-  - Bei Bewegung tritt ein „Resolution Collapse“ auf (Inhalt kleiner, grauer Rand).
-  - An Slice-NALs kann ein 14-Byte-Anhang `04f00ac0000003000004ec0ab003` hängen; in unserem Mitschnitt kam er nicht vor.
+- [O] PhoneMirror launches `serve-web --native` as a bridge. The first frame arrives after ≈ 4 s.
+  - Home (Indigo HID), touch (`/touch` contact/release, 0…65535) and keyboard (`/key` with the set of held HID
+    usages) work on the iPhone: switching Home, Spotlight by tap, text input.
+  - On quit, the process stops cleanly (status 0).
+- [O] According to the pymobiledevice3 source:
+  - Without RTCP receiver reports, the iPhone ends the session after ≈ 20 s.
+  - PLI requests a new IDR.
+  - During motion a "resolution collapse" occurs (smaller content, gray border).
+  - Slice NALs may carry a 14-byte trailer `04f00ac0000003000004ec0ab003`; it did not occur in our capture.
 
-### Systemgesten per HID (iPhone 15, iOS 27.0.1, `mainTouchscreen` 257) – am Gerät getestet
+### System gestures via HID (iPhone 15, iOS 27.0.1, `mainTouchscreen` 257) – tested on device
 
-- [B] **Wischen vom unteren Rand (y = 65535) wirkt nicht**: kein Home, kein App-Umschalter, und auch die App bekommt
-  den Touch nicht. Der gleiche Zug aus der Bildmitte scrollt normal.
-- [B] **Wischen vom oberen Rand (y = 0) wirkt**: Die Mitteilungszentrale öffnet sich.
-- [B] **Home zweimal schnell** (`/button home` down/up, 80 ms Pause, down/up) öffnet den App-Umschalter.
-- [B] Bei ruhendem Bildschirm sendet das iPhone keine neuen Bilder; ein POST auf `/pli` erzwingt einen frischen Keyframe.
-- Umsetzung in PhoneMirror:
-  - Mausgesten, die am Home-Balken beginnen, werden ausgewertet statt gesendet: kurz nach oben = Home,
-    mit Innehalten (≥ 0,3 s) = Home zweimal.
-  - ⌘2 = Home zweimal.
-  - Kantenfang nur noch oben und links.
-- [?] Wie Device Hub die Home-Balken-Geste umsetzt, ist unbekannt (eventuell über Indigo-Digitizer/Mercury-Envelope,
-  den pymobiledevice3 noch nicht kennt).
+- [O] **Swiping up from the bottom edge (y = 65535) has no effect**: no Home, no App Switcher, and the app doesn't
+  receive the touch either. The same swipe from the middle of the screen scrolls normally.
+- [O] **Swiping down from the top edge (y = 0) works**: Notification Center opens.
+- [O] **Pressing Home twice quickly** (`/button home` down/up, 80 ms pause, down/up) opens the App Switcher.
+- [O] While the screen is idle, the iPhone sends no new frames; a POST to `/pli` forces a fresh keyframe.
+- Implementation in PhoneMirror:
+  - Mouse gestures starting at the Home indicator are interpreted instead of sent: short swipe up = Home,
+    with a pause (≥ 0.3 s) = Home twice.
+  - ⌘2 = Home twice.
+  - Edge snapping only at the top and left.
+- [?] How Device Hub implements the Home indicator gesture is unknown (possibly via the Indigo digitizer/Mercury
+  envelope, which pymobiledevice3 doesn't support yet).
 
-### Nativer Transport in Swift (2026-10-19) – am Gerät getestet
+### Native transport in Swift (2026-10-19) – tested on device
 
-- [B] `remotepairingd` per libxpc (`RemotePairing.BrowseRequest`, `InitiatePairingCommand`,
-  `CreateAssertionCommand`) liefert die Tunnel-IPv6. Das funktioniert ohne Root und ohne Entitlement in einer
-  ad-hoc signierten App.
-- [B] `nettop -n -x -L 1 -m tcp` zeigt `remoted`s RSD-Verbindung (Port). Die Handshake-UUID kommt aus
-  `remotectl dumpstate` („Local device“).
-- [B] Eigener HTTP/2- und XPC-Codec, Handshake in devicectl-Reihenfolge: RSD liefert 85 Dienste.
-- [B] Das Medienangebot (bplist + zlib-9-Protobuf) ist byte-identisch zum Xcode-Mitschnitt (Unit-Test).
-- [B] 5 s Video: 1428 RTP-Pakete, 290 Bilder, 58 fps, 0 verloren. 5 s Ton: 498 Pakete AAC-ELD, 0 Fehler.
-- [B] Beim AAC-ELD-Decoder meldet `AudioConverterSetProperty` für das Magic Cookie `!dat`. Dekodiert wird
-  trotzdem korrekt; pymobiledevice3 ignoriert den Wert ebenfalls.
-- [B] Touch (`mainTouchscreen` 257), virtuelle Tastatur (`createService` 0x100002001) und Indigo-Tasten
-  funktionieren in der App: Spotlight per Tipp, Texteingabe, App-Umschalter.
-- [B] Screenshots von Fenstern auf einem anderen Space zeigen teils Bilder, die Sekunden alt sind. Das betrifft
-  das Testwerkzeug, nicht die App.
+- [O] `remotepairingd` via libxpc (`RemotePairing.BrowseRequest`, `InitiatePairingCommand`,
+  `CreateAssertionCommand`) returns the tunnel IPv6 address. This works without root and without entitlements in an
+  ad-hoc signed app.
+- [O] `nettop -n -x -L 1 -m tcp` shows `remoted`'s RSD connection (port). The handshake UUID comes from
+  `remotectl dumpstate` ("Local device").
+- [O] Custom HTTP/2 and XPC codecs, handshake in devicectl order: RSD returns 85 services.
+- [O] The media offer (bplist + zlib-9 protobuf) is byte-identical to the Xcode capture (unit test).
+- [O] 5 s of video: 1428 RTP packets, 290 frames, 58 fps, 0 lost. 5 s of audio: 498 AAC-ELD packets, 0 errors.
+- [O] For the AAC-ELD decoder, `AudioConverterSetProperty` reports `!dat` for the magic cookie. Decoding still works
+  correctly; pymobiledevice3 ignores the value as well.
+- [O] Touch (`mainTouchscreen` 257), virtual keyboard (`createService` 0x100002001) and Indigo buttons work in the
+  app: Spotlight by tap, text input, App Switcher.
+- [O] Screenshots of windows on another Space sometimes show frames that are seconds old. This affects the test
+  tooling, not the app.
 
-### Zwischenablage nativ (2026-10-19)
+### Native clipboard (2026-10-19)
 
-- [B] `PULL` mit `promiseSecondary` liefert nur den primären Typ inline. Eine nachgestellte Safari-Kopie
-  (HTML + Text) zeigt: iOS ergänzt `public.rtf`, Text und RTF sind nur versprochen.
-- [B] `allResolved` braucht dafür > 8 s (Umrechnung auf dem Gerät). PhoneMirror übernimmt deshalb HTML/RTF direkt.
-- [B] Fehler 26006 (`com.apple.dt.CoreDeviceError`): Der Inhalt trägt `com.apple.is-remote-clipboard` (kam per
-  Universeller Zwischenablage) und wird nicht herausgegeben.
-- [B] Am Mac tragen per Handoff übertragene Kopien ebenfalls `com.apple.is-remote-clipboard`. PhoneMirror schickt
-  sie nicht zurück.
-- [B] Eine zweite RSD-Verbindung (Probe-Tool) während die App läuft unterbricht deren Streams. Danach kam einmal
-  bis zu 75 s kein Keyframe. Seitdem fordert der Watchdog per PLI nach, solange nach dem Start kein Keyframe kam.
+- [O] `PULL` with `promiseSecondary` returns only the primary type inline. A reproduced Safari copy (HTML + text)
+  shows: iOS adds `public.rtf`; text and RTF are only promised.
+- [O] `allResolved` takes > 8 s for that (conversion on the device). PhoneMirror therefore takes HTML/RTF directly.
+- [O] Error 26006 (`com.apple.dt.CoreDeviceError`): the content carries `com.apple.is-remote-clipboard` (it arrived
+  via Universal Clipboard) and is not handed out.
+- [O] On the Mac, copies transferred via Handoff also carry `com.apple.is-remote-clipboard`. PhoneMirror doesn't send
+  them back.
+- [O] A second RSD connection (probe tool) while the app is running interrupts its streams. Once, no keyframe arrived
+  for up to 75 s afterwards. Since then the watchdog keeps requesting via PLI as long as no keyframe has arrived after
+  the start.
 
-### Bedienelement-Baum über WebDriverAgent (2026-10-19)
+### Accessibility tree via WebDriverAgent (2026-10-19)
 
-- [B] WebDriverAgent v16.15.3 lässt sich mit einem eigenen Entwickler-Team signieren und läuft unter iOS 27.0.1.
-  `/source?format=json` liefert z. B. in den Einstellungen 171 Knoten in ≈ 3 s, `rect` in Punkten (393 × 852).
-- [B] `TEST_RUNNER_USE_IP=<Tunnel-IP>` bindet WDA an den CoreDevice-Tunnel. Erreichbar ist es dann über
-  `[fdxx::1]:8100` vom Mac; über die WLAN-IP war das iPhone vom Mac ohnehin nicht erreichbar.
-- [B] xcodebuild/WDA und PhoneMirror (nativer RSD-Zugang) laufen parallel, ohne sich zu stören.
-- [B] In iOS 27 sind die Einträge der Einstellungen `Button`s mit innerem `StaticText`, nicht `Cell`s.
-- [B] Live per MCP getestet: `list_apps` (197 Apps), `launch_app`, `ui_tree`, `tap_element` (Navigation zu
-  „Allgemein“), `type_into` (Suche in den Einstellungen).
-- [B] Ad-hoc signierte App + Dateizugriff unter ~/Documents → TCC-Dialog blockiert den Aufruf. Daher liegen
-  WDA-Build und Testdateien außerhalb von ~/Documents.
+- [O] WebDriverAgent v16.15.3 can be signed with one's own developer team and runs on iOS 27.0.1.
+  `/source?format=json` returns e.g. 171 nodes in ≈ 3 s in Settings, with `rect` in points (393 × 852).
+- [O] `TEST_RUNNER_USE_IP=<tunnel IP>` binds WDA to the CoreDevice tunnel. It is then reachable from the Mac at
+  `[fdxx::1]:8100`; the iPhone wasn't reachable from the Mac via its Wi-Fi IP anyway.
+- [O] xcodebuild/WDA and PhoneMirror (native RSD access) run in parallel without interfering.
+- [O] In iOS 27, Settings rows are `Button`s with an inner `StaticText`, not `Cell`s.
+- [O] Tested live via MCP: `list_apps` (197 apps), `launch_app`, `ui_tree`, `tap_element` (navigating to
+  "General"), `type_into` (search in Settings).
+- [O] Ad-hoc signed app + file access under ~/Documents → a TCC prompt blocks the call. That's why the WDA build and
+  test files live outside ~/Documents.
 
-## 6. Offene Punkte
+### Camera app via agent (2026-10-19)
 
-- Ob ein nicht gelisteter Dienst über `serviceconnection.create` erreichbar ist (nicht getestet: schreibender Eingriff).
-- iOS-Binaries (ScreenContinuityShell, iOS-rapportd) wurden nicht untersucht.
-- Wire-Format von Kontrollnachrichten und AVConference-Offer/Answer: nicht dekompiliert.
-- Discovery per `dns-sd -B _rdlink._tcp`: Der Lauf brachte keine Ausgabe, daher ist die Sichtbarkeit ungeklärt.
-- Ob „View Device Screen“ in Xcode 26.4 auf diesem Mac funktioniert, wurde nicht ausprobiert.
+- [O] `launch_app com.apple.camera` starts the Camera; switching to the front camera and taking a photo by touch work.
+- [O] In the mirrored image, the camera preview stays black.
+- [O] WebDriverAgent doesn't recognize the Camera as the active app (`bundleId local.pid.0`, `pid 0`); `/source`
+  fails. Agents have to work with screenshots and coordinates there.
+- [O] While the Camera was running, the iPhone closed the HID connections while video kept running. Since then
+  PhoneMirror reconnects HID on a send error and retries the input.
 
-### Kamera-App per Agent (2026-10-19)
+## 6. Open points
 
-- [B] `launch_app com.apple.camera` startet die Kamera; Umschalten auf die Frontkamera und Auslösen per Touch
-  funktionieren.
-- [B] Im Spiegelbild bleibt die Kamera-Vorschau schwarz.
-- [B] WebDriverAgent erkennt die Kamera nicht als aktive App (`bundleId local.pid.0`, `pid 0`); `/source` scheitert.
-  Agents müssen dort mit Screenshot und Koordinaten arbeiten.
-- [B] Während die Kamera lief, schloss das iPhone die HID-Verbindungen, das Video lief weiter. PhoneMirror verbindet
-  HID seitdem bei einem Sendefehler neu und wiederholt die Eingabe.
+- Whether an unlisted service is reachable via `serviceconnection.create` (not tested: invasive).
+- iOS binaries (ScreenContinuityShell, iOS rapportd) were not examined.
+- Wire format of control messages and AVConference offer/answer: not decompiled.
+- Discovery via `dns-sd -B _rdlink._tcp`: the run produced no output, so visibility is unclear.
+- Whether "View Device Screen" in Xcode 26.4 works on this Mac was not tried.

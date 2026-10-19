@@ -1,16 +1,16 @@
-# Build-Ergebnisse
+# Build output
 .build/
 build/
 *.xcodeproj/xcuserdata/
 DerivedData/
 
-# Lokal geklonte bzw. gebaute Fremdprojekte (WebDriverAgent baut Scripts/build-wda.sh selbst)
+# Locally cloned/built third-party projects (Scripts/build-wda.sh builds WebDriverAgent)
 Vendor/
 
-# Frühe Forschungs-Probe gegen Xcodes privates CoreDevice.framework (nicht Teil von PhoneMirror)
+# Early research probe against Xcode's private CoreDevice.framework (not part of PhoneMirror)
 Probes/
 
-# Mitschnitte und Logs können Geräte-IDs, Adressen und Bildschirminhalte enthalten
+# Captures and logs may contain device IDs, addresses and screen contents
 *.log
 *.pcap
 *.pcapng
@@ -20,5 +20,5 @@ Probes/
 # macOS
 .DS_Store
 
-# Synthetische Testvideos, lassen sich mit `swift run hevc-test-stream` erzeugen
+# Synthetic test videos; regenerate with `swift run hevc-test-stream`
 PhoneMirror/TestMedia/

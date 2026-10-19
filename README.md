@@ -1,30 +1,24 @@
 # PhoneMirror
 
-Ein quelloffener Mac-Client, der den Bildschirm eines gekoppelten iPhones live zeigt und es per Maus, Tastatur
-oder KI-Agent (MCP) steuert. Er nutzt die Entwicklerdienste, die Apple mit Xcode 27 und iOS 27 für den Device Hub
-eingeführt hat.
+An open-source Mac client that shows the screen of a paired iPhone live and lets you control it with mouse,
+keyboard or an AI agent (MCP). It uses the developer services Apple introduced with Xcode 27 and iOS 27 for
+Device Hub.
 
-> **English summary:** PhoneMirror is an unofficial, open-source macOS client that mirrors and controls a paired
-> iPhone (iOS 27, Developer Mode) using the CoreDevice developer services that back Xcode's Device Hub: about
-> 60 fps HEVC video, audio, touch, keyboard, hardware buttons and clipboard sync, written natively in Swift.
-> A built-in MCP server lets AI agents operate the phone through an accessibility tree (via WebDriverAgent) and
-> real HID input. Not affiliated with Apple. Use at your own risk. Licensed under GPL-3.0-or-later.
+## Features
 
-## Funktionen
+- Live video at about 60 fps (HEVC, hardware decoding), audio, touch, keyboard, Home/Lock/Volume buttons
+- Clipboard sync in both directions, including rich text
+- Automatic reconnect and Developer Disk Image mounting
+- MCP server for AI agents: accessibility tree, tap by label, text input, screenshots, app launching
 
-- Live-Bild mit etwa 60 fps (HEVC, Hardware-Dekodierung), Ton, Touch, Tastatur, Home/Sperren/Lautstärke
-- Zwischenablage in beide Richtungen, auch formatierter Text
-- Automatisches Wiederverbinden und Mounten des Developer Disk Image
-- MCP-Server für KI-Agents: Bedienelement-Baum, Tippen per Beschriftung, Texteingabe, Screenshots, Apps starten
+Usage, setup and architecture: **[PhoneMirror/README.md](PhoneMirror/README.md)** ·
+Protocol findings: **[FINDINGS.md](FINDINGS.md)**
 
-Bedienung, Einrichtung und Aufbau: **[PhoneMirror/README.md](PhoneMirror/README.md)** ·
-Protokoll-Befunde: **[FINDINGS.md](FINDINGS.md)**
+## Requirements
 
-## Voraussetzungen
-
-- Mac mit macOS 27 und Xcode 27
-- iPhone mit iOS 27, Developer Mode an und mit diesem Mac gekoppelt
-- Für die Agent-Steuerung: ein Apple-Entwickler-Account, um WebDriverAgent einmalig zu signieren
+- Mac with macOS 27 and Xcode 27
+- iPhone with iOS 27, Developer Mode enabled and paired with this Mac
+- For agent control: an Apple developer account to sign WebDriverAgent once
 
 ```bash
 cd PhoneMirror
@@ -33,36 +27,36 @@ Scripts/bundle-app.sh
 open build/PhoneMirror.app
 ```
 
-## Haftungsausschluss
+## Disclaimer
 
-- PhoneMirror ist ein **inoffizielles** Projekt. Es nutzt undokumentierte Entwicklerschnittstellen von Apple, die sich
-  mit jedem iOS-, macOS- oder Xcode-Update ändern oder wegfallen können.
-- Die Software wird **ohne jede Gewähr** bereitgestellt (siehe Abschnitte 15 und 16 der [Lizenz](LICENSE)). Die
-  Nutzung erfolgt auf eigenes Risiko.
-- Verwende PhoneMirror nur mit **eigenen Geräten** bzw. mit Geräten, für die du die Erlaubnis hast.
-- **Agent-Steuerung:** Ein angebundener KI-Agent kann auf dem iPhone alles tun, was du auch tun kannst, also auch
-  Nachrichten senden, Käufe auslösen oder Daten löschen. Der MCP-Server lauscht nur auf `127.0.0.1` und verlangt ein
-  Token. Behalte trotzdem im Blick, was der Agent tut, und schalte die Agent-Steuerung ab, wenn du sie nicht brauchst.
-- PhoneMirror nutzt weder Apples iPhone-Mirroring-Dienst noch umgeht es dessen regionale Verfügbarkeit. Es spricht
-  ausschließlich die Entwicklerdienste an, die iOS gekoppelten Macs bei aktiviertem Developer Mode anbietet.
-- Die Protokolle wurden zur Herstellung der Interoperabilität ermittelt: durch Beobachtung des eigenen Geräts und
-  anhand des quelloffenen Projekts pymobiledevice3. Das Repository enthält keinen Code von Apple.
+- PhoneMirror is an **unofficial** project. It relies on undocumented Apple developer interfaces that may change or
+  disappear with any iOS, macOS or Xcode update.
+- The software is provided **without any warranty** (see sections 15 and 16 of the [license](LICENSE)). Use it at
+  your own risk.
+- Only use PhoneMirror with **your own devices** or devices you are authorized to use.
+- **Agent control:** A connected AI agent can do anything on the iPhone that you can, including sending messages,
+  making purchases or deleting data. The MCP server only listens on `127.0.0.1` and requires a token. Still, keep an
+  eye on what the agent does, and turn agent control off when you don't need it.
+- PhoneMirror neither uses Apple's iPhone Mirroring service nor circumvents its regional availability. It only talks
+  to the developer services that iOS offers to paired Macs when Developer Mode is enabled.
+- The protocols were determined for the purpose of interoperability: by observing the author's own device and by
+  referring to the open-source project pymobiledevice3. This repository contains no Apple code.
 
-## Marken
+## Trademarks
 
-Apple, iPhone, iOS, macOS, Xcode und iPhone Mirroring sind Marken von Apple Inc., eingetragen in den USA und
-anderen Ländern. PhoneMirror ist ein unabhängiges Projekt und steht in keiner Verbindung zu Apple Inc.; es wird
-von Apple weder unterstützt noch geprüft. Markennamen werden nur verwendet, um die Kompatibilität zu beschreiben.
+Apple, iPhone, iOS, macOS, Xcode and iPhone Mirroring are trademarks of Apple Inc., registered in the U.S. and other
+countries. PhoneMirror is an independent project and is not affiliated with, endorsed by or reviewed by Apple Inc.
+Trademarks are used only to describe compatibility.
 
-## Danksagung
+## Acknowledgements
 
-- [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) (GPL-3.0): Tunnel, RemoteXPC und die
-  CoreDevice-Dienste sind daran angelehnt; außerdem dient es als alternative Verbindungsart.
-- [WebDriverAgent](https://github.com/appium/WebDriverAgent) (Appium, BSD-3-Clause): liefert den
-  Bedienelement-Baum. Es ist nicht im Repository enthalten; `PhoneMirror/Scripts/build-wda.sh` klont und baut es.
+- [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) (GPL-3.0): the tunnel, RemoteXPC and CoreDevice
+  service implementations are closely modeled on it; it also serves as an alternative connection mode.
+- [WebDriverAgent](https://github.com/appium/WebDriverAgent) (Appium, BSD-3-Clause): provides the accessibility
+  tree. It is not included in this repository; `PhoneMirror/Scripts/build-wda.sh` clones and builds it.
 
-## Lizenz
+## License
 
-PhoneMirror steht unter der **GNU General Public License v3.0 oder später** (`GPL-3.0-or-later`), siehe
-[LICENSE](LICENSE). Wer PhoneMirror oder abgeleitete Werke weitergibt, muss den Quelltext unter derselben Lizenz
-zugänglich machen.
+PhoneMirror is licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`), see
+[LICENSE](LICENSE). Anyone who distributes PhoneMirror or derivative works must make the source code available under
+the same license.
