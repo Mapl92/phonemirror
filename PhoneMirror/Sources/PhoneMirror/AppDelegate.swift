@@ -12,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mcpServer: MCPHTTPServer?
     private var wdaWarmup: Task<Void, Never>?
     private var setupAssistant: SetupAssistantController?
+    /// iPhones remotepairingd knows, refreshed in the background for the device menu.
+    private var knownDevices: [RemotePairingTunnel.DeviceSummary] = []
+    private let deviceMenu = NSMenu(title: "iPhone")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
@@ -21,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AppSettings.shared.mcpEnabled { startMCPServer() }
         windowController = controller
         controller.onSetupNeeded = { [weak self] in self?.openSetupAssistant(nil) }
+        Task { await refreshDevices() }
         controller.showWindow(nil)
         controller.connect()
         NSApp.activate()
@@ -52,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         switch AppSettings.shared.connection {
         case .native:
-            return NativeTransport()
+            return NativeTransport(udid: AppSettings.shared.selectedDevice)
         case .serveWeb:
             let executable = defaults.string(forKey: "pymobiledevice3").map {
                 URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath)
@@ -104,6 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             connectionMenu.addItem(item)
         }
         deviceMenu.addItem(submenu: connectionMenu, title: "Connection")
+        self.deviceMenu.delegate = self
+        deviceMenu.addItem(submenu: self.deviceMenu, title: "iPhone")
         deviceMenu.addItem(withTitle: "Set Up iPhone…", action: #selector(AppDelegate.openSetupAssistant(_:)), keyEquivalent: "")
         deviceMenu.addItem(.separator())
         deviceMenu.addItem(withTitle: "Agent Control (MCP)", action: #selector(AppDelegate.toggleMCP(_:)), keyEquivalent: "")
@@ -215,6 +221,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func takeScreenshot(_ sender: Any?) { windowController?.takeScreenshot() }
+
+    private func refreshDevices() async {
+        knownDevices = await Task.detached { RemotePairingTunnel.listDevices() }.value
+    }
+
+    @objc func selectDevice(_ sender: NSMenuItem) {
+        let udid = sender.representedObject as? String
+        guard udid != AppSettings.shared.selectedDevice else { return }
+        AppSettings.shared.selectedDevice = udid
+        windowController?.replaceTransport(makeTransport())
+    }
     @objc func toggleKeepOnTop(_ sender: Any?) { windowController?.keepOnTop.toggle() }
     @objc func toggleRecording(_ sender: Any?) { windowController?.toggleRecording() }
     @objc func rotateLeft(_ sender: Any?) { windowController?.rotate(clockwise: false) }
@@ -273,5 +290,26 @@ extension AppDelegate: NSMenuItemValidation {
             break
         }
         return true
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    /// Device › iPhone: "Automatic" plus every known iPhone (refreshed in the background on each opening).
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === deviceMenu else { return }
+        menu.removeAllItems()
+        let selected = AppSettings.shared.selectedDevice
+        let automatic = NSMenuItem(title: "Automatic (first paired iPhone)", action: #selector(selectDevice(_:)), keyEquivalent: "")
+        automatic.state = selected == nil ? .on : .off
+        menu.addItem(automatic)
+        if !knownDevices.isEmpty { menu.addItem(.separator()) }
+        for device in knownDevices {
+            let suffix = device.isPaired ? (device.isConnected ? "" : " – not reachable") : " – not paired"
+            let item = NSMenuItem(title: device.name + suffix, action: #selector(selectDevice(_:)), keyEquivalent: "")
+            item.representedObject = device.udid
+            item.state = device.udid == selected ? .on : .off
+            menu.addItem(item)
+        }
+        Task { await refreshDevices() }
     }
 }

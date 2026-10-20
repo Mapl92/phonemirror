@@ -22,6 +22,8 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
         didSet { refreshButtons() }
     }
     private var isPaired = false
+    /// The iPhone the assistant works on: the chosen one, else an unpaired one that is connected, else the first.
+    private var target: RemotePairingTunnel.DeviceSummary?
     private var developerModeOn: Bool?
     /// Called when the window closes; the owner resumes the mirror connection.
     var onClose: (() -> Void)?
@@ -132,12 +134,13 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
         defer { busy = false }
         refreshImageStatus()
         pairStatus.stringValue = "Looking for the iPhone…"
-        let summary = await Task.detached { () -> RemotePairingTunnel.DeviceSummary? in
-            let tunnel = RemotePairingTunnel()
-            defer { tunnel.close() }
-            try? tunnel.find()
-            return tunnel.device
-        }.value
+        let devices = await Task.detached { RemotePairingTunnel.listDevices() }.value
+        let selected = AppSettings.shared.selectedDevice
+        let summary = devices.first { $0.udid == selected }
+            ?? devices.first { !$0.isPaired && $0.isConnected }
+            ?? devices.first { $0.isPaired }
+            ?? devices.first
+        target = summary
         guard let summary else {
             isPaired = false
             pairStatus.stringValue = "No iPhone found. Connect it by USB and unlock it."
@@ -151,7 +154,7 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
             return
         }
         developerStatus.stringValue = "Checking Developer Mode…"
-        developerModeOn = await Self.developerModeStatus()
+        developerModeOn = await Self.developerModeStatus(udid: summary.udid)
         switch developerModeOn {
         case true?: developerStatus.stringValue = "✓ Developer Mode is on."
         case false?: developerStatus.stringValue = "Developer Mode is off."
@@ -160,10 +163,10 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
     }
 
     /// Right after the mirror connection pauses the iPhone is briefly unreachable – retry a few times.
-    private static func developerModeStatus() async -> Bool? {
+    private static func developerModeStatus(udid: String) async -> Bool? {
         for attempt in 0..<3 {
             if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
-            guard let rsd = try? await RemoteServiceDiscovery.connect() else { continue }
+            guard let rsd = try? await RemoteServiceDiscovery.connect(udid: udid) else { continue }
             defer { rsd.close() }
             if let enabled = try? await DeveloperMode.isEnabled(rsd: rsd) { return enabled }
         }
@@ -173,11 +176,12 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
     @objc private func pair() {
         busy = true
         pairStatus.stringValue = "Tap “Trust” on the iPhone and enter its passcode…"
+        let udid = target?.udid
         Task {
             let result = await Task.detached { () -> Error? in
                 let tunnel = RemotePairingTunnel()
                 defer { tunnel.close() }
-                do { try tunnel.pair() } catch { return error }
+                do { try tunnel.pair(udid: udid) } catch { return error }
                 return nil
             }.value
             busy = false
@@ -194,7 +198,7 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
         developerStatus.stringValue = "Showing the switch…"
         Task {
             do {
-                let rsd = try await RemoteServiceDiscovery.connect()
+                let rsd = try await RemoteServiceDiscovery.connect(udid: target?.udid)
                 defer { rsd.close() }
                 try await DeveloperMode.revealSetting(rsd: rsd)
                 developerStatus.stringValue = "Now on the iPhone: Settings › Privacy & Security › Developer Mode → on. After the restart, confirm “Turn On”, then click Done."

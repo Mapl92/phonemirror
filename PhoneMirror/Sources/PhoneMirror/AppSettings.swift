@@ -25,6 +25,12 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: Key.soundEnabled) }
     }
 
+    /// UDID of the iPhone to mirror; `nil` = the first paired iPhone.
+    var selectedDevice: String? {
+        get { defaults.string(forKey: Key.selectedDevice) }
+        set { defaults.set(newValue, forKey: Key.selectedDevice) }
+    }
+
     var keepOnTop: Bool {
         get { defaults.bool(forKey: Key.keepOnTop) }
         set { defaults.set(newValue, forKey: Key.keepOnTop) }
@@ -76,6 +82,7 @@ final class AppSettings {
         static let clipboardSync = "clipboardSync"
         static let zoom = "zoom"
         static let keepOnTop = "keepOnTop"
+        static let selectedDevice = "selectedDevice"
     }
 }
 

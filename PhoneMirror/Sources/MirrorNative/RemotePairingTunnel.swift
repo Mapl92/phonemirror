@@ -74,7 +74,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         let auth = string(xpc_dictionary_get_value(info, "authState"), "rawCase")
         let connection = string(xpc_dictionary_get_value(info, "connectionState"), "rawCase")
         return DeviceSummary(name: string(info, "name") ?? "iPhone", udid: string(info, "udid") ?? "",
-                             isPaired: auth == "authenticated", isConnected: connection == "available")
+                             isPaired: auth == "authenticated", isConnected: Self.reachableStates.contains(connection ?? ""))
     }
 
     /// Find the device (`udid` or the first one), create an assertion. Returns the tunnel IPv6.
@@ -176,42 +176,102 @@ public final class RemotePairingTunnel: @unchecked Sendable {
     private func browse(udid wanted: String?) throws -> xpc_endpoint_t {
         let connection = xpc_connection_create_mach_service("com.apple.CoreDevice.remotepairingd", queue, 0)
         let found = DispatchSemaphore(value: 0)
-        let result = LockedBox<(endpoint: xpc_endpoint_t, udid: String, info: xpc_object_t)?>(nil)
+        let seen = LockedBox<[(endpoint: xpc_endpoint_t, udid: String, info: xpc_object_t)]>([])
+        let done = LockedBox(false)
 
         xpc_connection_set_event_handler(connection) { event in
-            guard xpc_get_type(event) == XPC_TYPE_DICTIONARY,
-                  let value = xpc_dictionary_get_value(event, "value"),
-                  let deviceFound = xpc_dictionary_get_value(value, "deviceFound"),
-                  let zero = xpc_dictionary_get_value(deviceFound, "_0"),
-                  let info = xpc_dictionary_get_value(zero, "deviceInfo"),
-                  let endpoint = xpc_dictionary_get_value(info, "endpoint")
-            else { return }
-            let udid = xpc_dictionary_get_string(info, "udid").map { String(cString: $0) } ?? ""
-            if let wanted, udid != wanted { return }
-            let isFirst = result.withLock { current in
-                guard current == nil else { return false }
-                current = (endpoint, udid, info)
-                return true
-            }
-            if isFirst { found.signal() }
+            guard let (endpoint, udid, info) = Self.deviceFound(event) else { return }
+            seen.withLock { $0.append((endpoint, udid, info)) }
+            // A specific device: that one. Otherwise the first paired iPhone/iPad (not e.g. a Watch).
+            let match = wanted.map { udid == $0 } ?? (Self.isPhoneOrPad(info) && Self.isPaired(info))
+            if match, done.withLock({ finished in defer { finished = true }; return !finished }) { found.signal() }
         }
         xpc_connection_activate(connection)
         browseConnection = connection
+        Self.sendBrowseRequest(connection, queue: queue)
 
-        // Mercury discards requests without a reply channel – so send with reply and ignore the reply.
+        let timeout: Double = wanted == nil ? 3 : Self.replyTimeout
+        let matched = found.wait(timeout: .now() + timeout) == .success
+        done.withLock { $0 = true }
+        let devices = seen.withLock { $0 }
+        let device: (endpoint: xpc_endpoint_t, udid: String, info: xpc_object_t)?
+        if matched {
+            device = devices.last { candidate in
+                if let wanted { return candidate.udid == wanted }
+                return Self.isPhoneOrPad(candidate.info) && Self.isPaired(candidate.info)
+            }
+        } else if wanted == nil {
+            // No paired iPhone: take an unpaired one (→ "not paired" with a hint to the setup assistant).
+            device = devices.first { Self.isPhoneOrPad($0.info) } ?? devices.first
+        } else {
+            device = nil
+        }
+        guard let device else { throw NativeTunnelError.deviceNotFound }
+        udid = device.udid
+        deviceInfo = device.info
+        return device.endpoint
+    }
+
+    private static func deviceFound(_ event: xpc_object_t) -> (xpc_endpoint_t, String, xpc_object_t)? {
+        guard xpc_get_type(event) == XPC_TYPE_DICTIONARY,
+              let value = xpc_dictionary_get_value(event, "value"),
+              let deviceFound = xpc_dictionary_get_value(value, "deviceFound"),
+              let zero = xpc_dictionary_get_value(deviceFound, "_0"),
+              let info = xpc_dictionary_get_value(zero, "deviceInfo"),
+              let endpoint = xpc_dictionary_get_value(info, "endpoint")
+        else { return nil }
+        let udid = xpc_dictionary_get_string(info, "udid").map { String(cString: $0) } ?? ""
+        return (endpoint, udid, info)
+    }
+
+    /// "available" (reachable) or "connected" (a tunnel is up, e.g. PhoneMirror's own).
+    static let reachableStates: Set<String> = ["available", "connected"]
+
+    private static func isPhoneOrPad(_ info: xpc_object_t) -> Bool {
+        guard let model = xpc_dictionary_get_string(info, "model").map({ String(cString: $0) }) else { return true }
+        return model.hasPrefix("iPhone") || model.hasPrefix("iPad")
+    }
+
+    private static func isPaired(_ info: xpc_object_t) -> Bool {
+        guard let auth = xpc_dictionary_get_value(info, "authState"),
+              let state = xpc_dictionary_get_string(auth, "rawCase")
+        else { return false }
+        return String(cString: state) == "authenticated"
+    }
+
+    /// Mercury discards requests without a reply channel – so send with reply and ignore the reply.
+    private static func sendBrowseRequest(_ connection: xpc_connection_t, queue: DispatchQueue) {
         let message = xpc_dictionary_create(nil, nil, 0)
         let body = xpc_dictionary_create(nil, nil, 0)
         xpc_dictionary_set_bool(body, "currentDevicesOnly", false)
         xpc_dictionary_set_string(message, "mangledTypeName", "RemotePairing.BrowseRequest")
         xpc_dictionary_set_value(message, "value", body)
         xpc_connection_send_message_with_reply(connection, message, queue) { _ in }
+    }
 
-        guard found.wait(timeout: .now() + Self.replyTimeout) == .success,
-              let device = result.withLock({ $0 })
-        else { throw NativeTunnelError.deviceNotFound }
-        udid = device.udid
-        deviceInfo = device.info
-        return device.endpoint
+    /// All iPhones/iPads remotepairingd knows (collected for `duration` seconds), for a device picker.
+    public static func listDevices(duration: Double = 1.5) -> [DeviceSummary] {
+        let queue = DispatchQueue(label: "PhoneMirror.remotepairing.list")
+        let connection = xpc_connection_create_mach_service("com.apple.CoreDevice.remotepairingd", queue, 0)
+        let devices = LockedBox<[String: DeviceSummary]>([:])
+        xpc_connection_set_event_handler(connection) { event in
+            guard let (_, udid, info) = deviceFound(event), isPhoneOrPad(info), !udid.isEmpty else { return }
+            let name = xpc_dictionary_get_string(info, "name").map { String(cString: $0) } ?? "iPhone"
+            let connected = xpc_dictionary_get_value(info, "connectionState")
+                .flatMap { xpc_dictionary_get_string($0, "rawCase") }.map { reachableStates.contains(String(cString: $0)) } ?? false
+            // remotepairingd may report a device more than once (e.g. per transport): merge the states.
+            devices.withLock { known in
+                let previous = known[udid]
+                known[udid] = DeviceSummary(name: name, udid: udid,
+                                            isPaired: isPaired(info) || previous?.isPaired == true,
+                                            isConnected: connected || previous?.isConnected == true)
+            }
+        }
+        xpc_connection_activate(connection)
+        sendBrowseRequest(connection, queue: queue)
+        Thread.sleep(forTimeInterval: duration)
+        xpc_connection_cancel(connection)
+        return devices.withLock { Array($0.values) }.sorted { $0.name < $1.name }
     }
 
     /// Send `{mangledTypeName, value}` and wait synchronously for the reply.
