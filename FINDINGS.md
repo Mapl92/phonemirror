@@ -302,6 +302,18 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
 - [O] Full search: 121 MB in 645 requests, 139 s (129 s for the sequential index requests, ≈ 0.2 s each).
   With a verified position hint: 32.8 MB in 20 requests, 7 s. The result is byte-identical to Xcode's own copy.
 
+### Display geometry, orientation, lock (2026-10-20)
+
+- [O] `com.apple.coredevice.deviceinfo` → `getdisplayinfo` (no DDI needed): primary display `currentMode.size`
+  (1179 × 2556), `pointScale` 3, `currentOrientation` (`rot0`/`rot90`/`rot180`/`rot270`, the interface orientation)
+  and `orientation.currentDeviceOrientation`. `getlockstate` on the same service fails with code 2 on iOS 27.0.1.
+- [O] The video stream stays in native portrait orientation; landscape content is rotated inside it. `rot90` (device
+  `landscapeRight`) needs a 90° clockwise turn to be upright, `rot270` (device `landscapeLeft`) 270°.
+- [O] `com.apple.coredevice.devicecontrol` rotates the UI with
+  `{featureIdentifier: …remote.devicecontrol.orientation, messageType: OrientationRequest, payload: {rotate: {_0: left|right}}}`.
+- [O] After pressing the side button (lock), the native cryptexd DDI mount still succeeded (2.2 s) – unlike devicectl's
+  "device was still locked" (10003).
+
 ## 6. Open points
 
 - Whether an unlisted service is reachable via `serviceconnection.create` (not tested: invasive).

@@ -76,6 +76,15 @@ do {
         print("== display info"); print(dump(try await info.displayInfo()))
         print("== lock state"); print(dump(try await info.lockState()))
         if rsd.port(of: "com.apple.coredevice.devicecontrol") != nil { print("devicecontrol available") }
+    case "lock":
+        // native-probe lock – presses the side button (locks the iPhone)
+        let rsd = try await RemoteServiceDiscovery.connect()
+        defer { rsd.close() }
+        let hid = HIDService(universal: try await rsd.connect(service: HIDService.universalName),
+                             indigo: try await rsd.connect(service: HIDService.indigoName))
+        try await hid.press(usagePage: 0x0C, usage: 0x30, hold: 0.5)
+        hid.close()
+        print("Lock pressed")
     case "rotate":
         // native-probe rotate left|right
         let rsd = try await RemoteServiceDiscovery.connect()
