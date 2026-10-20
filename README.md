@@ -14,11 +14,22 @@ Device Hub.
 Usage, setup and architecture: **[PhoneMirror/README.md](PhoneMirror/README.md)** ·
 Protocol findings: **[FINDINGS.md](FINDINGS.md)**
 
+## Download
+
+Get the latest signed and notarized build from the
+**[Releases page](https://github.com/Mapl92/phonemirror/releases/latest)**: open `PhoneMirror-<version>.dmg` and drag
+PhoneMirror to Applications. SHA-256 checksums are attached to each release.
+
+The download covers mirroring and control. For the agent accessibility tree you still need this repository once to
+build WebDriverAgent (`PhoneMirror/Scripts/build-wda.sh`, see [PhoneMirror/README.md](PhoneMirror/README.md)).
+
 ## Requirements
 
-- Mac with macOS 27 and Xcode 27
+- Mac with macOS 27 and Xcode 27 (installed; PhoneMirror uses its `devicectl`)
 - iPhone with iOS 27, Developer Mode enabled and paired with this Mac
 - For agent control: an Apple developer account to sign WebDriverAgent once
+
+To build from source instead:
 
 ```bash
 cd PhoneMirror
