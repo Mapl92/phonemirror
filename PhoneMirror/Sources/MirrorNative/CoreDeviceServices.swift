@@ -121,6 +121,83 @@ public final class AppService: @unchecked Sendable {
 }
 
 /// `com.apple.coredevice.displayservice` (dtremotedisplayd): screen and audio streams.
+/// `com.apple.coredevice.deviceinfo`: display geometry and lock state (no Developer Disk Image needed).
+public final class DeviceInfoService: @unchecked Sendable {
+    public static let name = "com.apple.coredevice.deviceinfo"
+    public let service: CoreDeviceService
+
+    public init(connection: RemoteXPCConnection) {
+        service = CoreDeviceService(connection: connection)
+    }
+
+    public func displayInfo() async throws -> XPCValue {
+        try await service.invoke(feature: "com.apple.coredevice.feature.getdisplayinfo")
+    }
+
+    public func lockState() async throws -> XPCValue {
+        try await service.invoke(feature: "com.apple.coredevice.feature.getlockstate")
+    }
+}
+
+/// `com.apple.coredevice.devicecontrol`: rotates the device UI (Device Hub's rotate buttons).
+public final class DeviceControlService: @unchecked Sendable {
+    public static let name = "com.apple.coredevice.devicecontrol"
+    private let connection: RemoteXPCConnection
+
+    public init(connection: RemoteXPCConnection) {
+        self.connection = connection
+    }
+
+    /// `clockwise == false` is Xcode's "rotate left". Returns the new device orientation.
+    @discardableResult
+    public func rotate(clockwise: Bool) async throws -> String? {
+        let reply = try await withTimeout(seconds: 10, "rotate") { [connection] in
+            try await connection.sendReceive([
+                "featureIdentifier": "com.apple.coredevice.feature.remote.devicecontrol.orientation",
+                "messageType": "OrientationRequest",
+                "payload": ["rotate": ["_0": .string(clockwise ? "right" : "left")]],
+            ])
+        }
+        return reply["currentDeviceOrientation"]?.stringValue
+    }
+
+    public func close() {
+        connection.close()
+    }
+}
+
+extension DeviceScreen {
+    /// Native (portrait) geometry of the primary display from `getdisplayinfo`.
+    public init?(displayInfo: XPCValue) {
+        guard let displays = displayInfo["displays"]?.arrayValue,
+              let primary = displays.first(where: { $0["primary"]?.boolValue == true }) ?? displays.first,
+              let size = (primary["currentMode"]?["size"] ?? primary["nativeSize"])?.arrayValue, size.count == 2,
+              case .double(let first) = size[0], case .double(let second) = size[1], first > 0, second > 0
+        else { return nil }
+        let width = Int(min(first, second))
+        let height = Int(max(first, second))
+        let scale = Double(primary["pointScale"]?.intValue ?? primary["currentMode"]?["preferredUIScale"]?.intValue ?? 3)
+        self.init(pixelWidth: width, pixelHeight: height, scale: scale,
+                  cornerRadius: DeviceScreen.estimatedCornerRadius(pixelWidth: width, pixelHeight: height, scale: scale))
+    }
+}
+
+extension DeviceOrientation {
+    /// Orientation of the primary display's content (`currentOrientation`: rot0/rot90/rot180/rot270).
+    public init?(displayInfo: XPCValue) {
+        guard let displays = displayInfo["displays"]?.arrayValue,
+              let primary = displays.first(where: { $0["primary"]?.boolValue == true }) ?? displays.first,
+              let rotation = primary["currentOrientation"]?.stringValue
+        else { return nil }
+        switch rotation {
+        case "rot90": self = .landscapeLeft
+        case "rot180": self = .portraitUpsideDown
+        case "rot270": self = .landscapeRight
+        default: self = .portrait
+        }
+    }
+}
+
 public final class DisplayService: @unchecked Sendable {
     public static let name = "com.apple.coredevice.displayservice"
     public let service: CoreDeviceService

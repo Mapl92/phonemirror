@@ -30,6 +30,9 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private(set) var latestFrame: Frame?
     var activeSession: (any MirrorSession)? { session }
     var currentScreen: DeviceScreen { screen }
+    private(set) var orientation = DeviceOrientation.portrait
+    /// The screen as the user (and an agent) sees it: width and height swapped in landscape.
+    var displayedScreen: DeviceScreen { orientation.displayed(screen) }
     var transportName: String { transport.displayName }
     /// Called (once per launch) when the iPhone needs pairing or Developer Mode – opens the setup assistant.
     var onSetupNeeded: (() -> Void)?
@@ -207,7 +210,20 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         case .clipboard(let content):
             clipboard.applyRemote(content)
         case .screenChanged(let newScreen):
+            let pixelsChanged = newScreen.pixelWidth != screen.pixelWidth || newScreen.pixelHeight != screen.pixelHeight
             apply(screen: newScreen, resize: newScreen.pointSize != screen.pointSize)
+            if pixelsChanged, decoder != nil {
+                // The crop detection works with the display's pixel size.
+                decoder = makeDecoder()
+                let session = session
+                Task { await session?.requestKeyframe() }
+            }
+        case .orientationChanged(let newOrientation):
+            guard newOrientation != orientation else { break }
+            let turned = newOrientation.isLandscape != orientation.isLandscape
+            orientation = newOrientation
+            mirrorView.orientation = newOrientation
+            apply(screen: screen, resize: turned)
         case .disconnected:
             break
         }
@@ -230,9 +246,10 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         self.screen = screen
         mirrorView.screen = screen
         guard let window else { return }
-        window.contentAspectRatio = screen.pointSize
+        let displayed = orientation.displayed(screen)
+        window.contentAspectRatio = displayed.pointSize
         if resize {
-            let size = CGSize(width: screen.pointSize.width * settings.zoom, height: screen.pointSize.height * settings.zoom)
+            let size = CGSize(width: displayed.pointSize.width * settings.zoom, height: displayed.pointSize.height * settings.zoom)
             isResizingProgrammatically = true
             window.setContentSize(size)
             isResizingProgrammatically = false
@@ -242,7 +259,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     /// Remember the size the user sets by dragging as the zoom.
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let window, !isResizingProgrammatically else { return }
-        settings.zoom = window.contentLayoutRect.width / screen.pointSize.width
+        settings.zoom = window.contentLayoutRect.width / displayedScreen.pointSize.width
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -273,6 +290,18 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     // MARK: - Menu actions
+
+    /// Rotates the iPhone's UI like Device Hub's rotate buttons (the view follows via `orientationChanged`).
+    func rotate(clockwise: Bool) {
+        guard let session else { return }
+        Task {
+            do {
+                try await session.rotate(clockwise: clockwise)
+            } catch {
+                Self.logger.error("Rotate: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
 
     func send(_ event: InputEvent) {
         inputPump?.enqueue(event)

@@ -56,6 +56,36 @@ do {
             try await DeveloperMode.revealSetting(rsd: rsd)
             print("Developer Mode switch revealed in Settings")
         }
+    case "deviceinfo":
+        let rsd = try await RemoteServiceDiscovery.connect()
+        defer { rsd.close() }
+        let info = DeviceInfoService(connection: try await rsd.connect(service: DeviceInfoService.name))
+        func dump(_ value: XPCValue, _ indent: String = "") -> String {
+            switch value {
+            case .dictionary(let entries):
+                return entries.filter { $0.key != "availableModes" }.map { "\(indent)\($0.key): " + dump($0.value, indent + "  ").trimmingCharacters(in: .whitespaces) }.joined(separator: "\n")
+            case .array(let items): return "[" + items.map { dump($0) }.joined(separator: ", ") + "]"
+            case .double(let d): return String(d)
+            case .int64(let i): return String(i)
+            case .uint64(let u): return String(u)
+            case .bool(let b): return String(b)
+            case .string(let t): return t
+            default: return "\(value)"
+            }
+        }
+        print("== display info"); print(dump(try await info.displayInfo()))
+        print("== lock state"); print(dump(try await info.lockState()))
+        if rsd.port(of: "com.apple.coredevice.devicecontrol") != nil { print("devicecontrol available") }
+    case "rotate":
+        // native-probe rotate left|right
+        let rsd = try await RemoteServiceDiscovery.connect()
+        defer { rsd.close() }
+        let control = DeviceControlService(connection: try await rsd.connect(service: DeviceControlService.name))
+        let result = try await control.rotate(clockwise: CommandLine.arguments.dropFirst(2).first == "right")
+        try await Task.sleep(for: .seconds(1))
+        let info = DeviceInfoService(connection: try await rsd.connect(service: DeviceInfoService.name))
+        let display = try await info.displayInfo()
+        print("device: \(result ?? "?"), content: \(DeviceOrientation(displayInfo: display).map { "\($0)" } ?? "?")")
     case "ddi":
         // native-probe ddi [status|unmount|mount]
         let action = CommandLine.arguments.dropFirst(2).first ?? "status"
@@ -122,9 +152,10 @@ do {
         print("Settings: \(settings.map { describeStructure($0, indent: 1) } ?? "not found")")
         if CommandLine.arguments.dropFirst(2).first == "launch" {
             let launcher = try await rsd.connect(service: AppService.name)
-            try await AppService(connection: launcher).launch(bundleID: "com.apple.Preferences")
+            let bundleID = CommandLine.arguments.dropFirst(3).first ?? "com.apple.Preferences"
+            try await AppService(connection: launcher).launch(bundleID: bundleID)
             launcher.close()
-            print("Settings launched")
+            print("\(bundleID) launched")
         }
     case "clipboard":
         // Print only the structure (keys, types, lengths) – no contents.

@@ -7,11 +7,22 @@ import MirrorCore
 @MainActor
 final class MirrorView: NSView {
     var onInput: ((InputEvent) -> Void)?
+    /// Native (portrait) geometry of the device display.
     var screen = DeviceScreen.iPhone15 {
-        didSet {
-            needsLayout = true
-            homeGesture = HomeIndicatorGestureRecognizer(screen: screen)
-        }
+        didSet { geometryChanged() }
+    }
+
+    /// How the content is turned: the video stays native, the view rotates it upright and maps input back.
+    var orientation = DeviceOrientation.portrait {
+        didSet { geometryChanged() }
+    }
+
+    /// The screen as the viewer sees it – all mouse handling works in this space.
+    var displayedScreen: DeviceScreen { orientation.displayed(screen) }
+
+    private func geometryChanged() {
+        needsLayout = true
+        homeGesture = HomeIndicatorGestureRecognizer(screen: displayedScreen)
     }
 
     /// Shows exactly the display area with rounded corners. The image content arrives as an IOSurface;
@@ -79,7 +90,7 @@ final class MirrorView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     private var mapper: TouchMapper {
-        TouchMapper(contentSize: screen.pointSize, viewBounds: bounds)
+        TouchMapper(contentSize: displayedScreen.pointSize, viewBounds: bounds)
     }
 
     override func layout() {
@@ -87,10 +98,18 @@ final class MirrorView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let videoRect = mapper.videoRect
-        videoLayer.frame = videoRect
-        videoLayer.cornerRadius = screen.cornerRadius * videoRect.width / screen.pointSize.width
+        // The layer keeps the native (portrait) shape and is turned around its center.
+        let nativeSize = orientation.isLandscape ? CGSize(width: videoRect.height, height: videoRect.width) : videoRect.size
+        videoLayer.setAffineTransform(.identity)
+        videoLayer.bounds = CGRect(origin: .zero, size: nativeSize)
+        videoLayer.position = CGPoint(x: videoRect.midX, y: videoRect.midY)
+        videoLayer.setAffineTransform(CGAffineTransform(rotationAngle: Self.rotationSign * CGFloat(orientation.quarterTurns) * .pi / 2))
+        videoLayer.cornerRadius = screen.cornerRadius * nativeSize.width / screen.pointSize.width
         CATransaction.commit()
     }
+
+    /// Direction of a positive rotation angle in this (flipped) view: +1 turns clockwise on screen.
+    static let rotationSign: CGFloat = 1
 
     // MARK: - Video
 
@@ -114,7 +133,7 @@ final class MirrorView: NSView {
     func showAgentActivity(at point: TouchPoint?) {
         agentBadge.stringValue = "  Agent in control  "
         agentBadge.isHidden = false
-        if let point { updateIndicator(point) }
+        if let point { updateIndicator(orientation.displayed(point)) }
         agentBadgeHideTask?.cancel()
         agentBadgeHideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(point == nil ? 3 : 0.4))
@@ -143,7 +162,7 @@ final class MirrorView: NSView {
         }
         activeTouch = true
         // Snap touches that start near the top/left edge onto the edge (Notifications, Back).
-        sendTouch(.began, edgeSnapping.snap(point, on: screen))
+        sendTouch(.began, edgeSnapping.snap(point, on: displayedScreen))
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -210,12 +229,13 @@ final class MirrorView: NSView {
         let dx = event.scrollingDeltaX * factor
         let dy = event.scrollingDeltaY * factor
         guard dx != 0 || dy != 0 else { return }
-        onInput?(.scroll(dx: dx, dy: dy, at: lastPointer))
+        let native = orientation.native(dx: dx, dy: dy)
+        onInput?(.scroll(dx: native.dx, dy: native.dy, at: orientation.native(lastPointer)))
     }
 
     private func sendTouch(_ phase: TouchPhase, _ point: TouchPoint) {
         lastPointer = point
-        onInput?(.touch(phase, point))
+        onInput?(.touch(phase, orientation.native(point)))
         updateIndicator(phase == .ended ? nil : point)
     }
 

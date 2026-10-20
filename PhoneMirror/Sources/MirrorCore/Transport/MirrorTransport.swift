@@ -21,6 +21,14 @@ public struct DeviceScreen: Sendable, Equatable {
         CGSize(width: Double(pixelWidth) / scale, height: Double(pixelHeight) / scale)
     }
 
+    /// Approximate display corner radius in points: none for 16:9 displays (Home button), otherwise
+    /// about 14 % of the width (iPhone 15: 55 pt). Devices don't report it.
+    public static func estimatedCornerRadius(pixelWidth: Int, pixelHeight: Int, scale: Double) -> Double {
+        let ratio = Double(max(pixelWidth, pixelHeight)) / Double(max(min(pixelWidth, pixelHeight), 1))
+        guard ratio > 1.9 else { return 0 }
+        return (Double(min(pixelWidth, pixelHeight)) / scale * 0.14).rounded()
+    }
+
     /// iPhone 15 (iPhone15,4): 1179 × 2556 px, @3x.
     public static let iPhone15 = DeviceScreen(pixelWidth: 1179, pixelHeight: 2556, scale: 3, cornerRadius: 55)
 }
@@ -70,6 +78,8 @@ public enum TransportEvent: Sendable, Equatable {
     /// Something was copied on the device.
     case clipboard(ClipboardContent)
     case screenChanged(DeviceScreen)
+    /// The iPhone was rotated (the video stays in native portrait orientation).
+    case orientationChanged(DeviceOrientation)
     /// Connection lost; the app tries again.
     case disconnected(reason: String?)
 }
@@ -119,6 +129,8 @@ public protocol MirrorSession: AnyObject, Sendable {
     func launchApp(bundleID: String) async throws
     /// Tunnel address and UDID, if the transport knows them.
     func deviceEndpoint() async -> DeviceEndpoint?
+    /// Rotates the device's UI by 90° (as Xcode's Device Hub does).
+    func rotate(clockwise: Bool) async throws
     func close() async
 }
 
@@ -129,6 +141,7 @@ public extension MirrorSession {
     func installedApps() async throws -> [InstalledApp] { throw UnsupportedFeatureError("Listing apps") }
     func launchApp(bundleID: String) async throws { throw UnsupportedFeatureError("Launching apps") }
     func deviceEndpoint() async -> DeviceEndpoint? { nil }
+    func rotate(clockwise: Bool) async throws { throw UnsupportedFeatureError("Rotating") }
 }
 
 /// Sets up sessions. Implementations: `FileReplayTransport` (test file),

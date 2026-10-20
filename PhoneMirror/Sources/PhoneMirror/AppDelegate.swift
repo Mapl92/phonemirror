@@ -82,6 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         deviceMenu.addItem(buttonItem("Volume Up", .volumeUp, key: String(UnicodeScalar(NSUpArrowFunctionKey)!), modifiers: [.command]))
         deviceMenu.addItem(buttonItem("Volume Down", .volumeDown, key: String(UnicodeScalar(NSDownArrowFunctionKey)!), modifiers: [.command]))
         deviceMenu.addItem(.separator())
+        let rotateLeft = NSMenuItem(title: "Rotate Left", action: #selector(AppDelegate.rotateLeft(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        rotateLeft.keyEquivalentModifierMask = [.command, .option]
+        deviceMenu.addItem(rotateLeft)
+        let rotateRight = NSMenuItem(title: "Rotate Right", action: #selector(AppDelegate.rotateRight(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        rotateRight.keyEquivalentModifierMask = [.command, .option]
+        deviceMenu.addItem(rotateRight)
+        deviceMenu.addItem(.separator())
         let sound = NSMenuItem(title: "Sound from iPhone", action: #selector(AppDelegate.toggleSound(_:)), keyEquivalent: "t")
         sound.keyEquivalentModifierMask = [.command, .option]
         deviceMenu.addItem(sound)
@@ -199,6 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             assistant.show()
         }
     }
+
+    @objc func rotateLeft(_ sender: Any?) { windowController?.rotate(clockwise: false) }
+    @objc func rotateRight(_ sender: Any?) { windowController?.rotate(clockwise: true) }
 
     @objc func toggleSound(_ sender: Any?) {
         guard let windowController else { return }

@@ -33,7 +33,11 @@ public struct NativeTransport: MirrorTransport {
 }
 
 public actor NativeSession: MirrorSession {
-    public nonisolated let screen: DeviceScreen
+    /// Starts with the transport's default and is replaced by the device's real geometry once connected.
+    public nonisolated var screen: DeviceScreen { screenState.withLock { $0 } }
+    private nonisolated let screenState: OSAllocatedUnfairLock<DeviceScreen>
+    private var orientation: DeviceOrientation = .portrait
+    private var deviceInfo: DeviceInfoService?
     public nonisolated let events: AsyncStream<TransportEvent>
     private let continuation: AsyncStream<TransportEvent>.Continuation
 
@@ -53,7 +57,7 @@ public actor NativeSession: MirrorSession {
     private static let logger = Logger(subsystem: "PhoneMirror", category: "native")
 
     init(screen: DeviceScreen) {
-        self.screen = screen
+        screenState = OSAllocatedUnfairLock(initialState: screen)
         encoder = InputActionEncoder(screen: screen)
         (events, continuation) = AsyncStream.makeStream(of: TransportEvent.self, bufferingPolicy: .unbounded)
     }
@@ -63,6 +67,24 @@ public actor NativeSession: MirrorSession {
         let rsd = try await Self.connectWithDeveloperServices(udid: udid)
         self.rsd = rsd
         let sessionID = UUID()
+
+        // Real display geometry and orientation (every iPhone model differs).
+        if let connection = try? await rsd.connect(service: DeviceInfoService.name) {
+            let info = DeviceInfoService(connection: connection)
+            deviceInfo = info
+            if let displayInfo = try? await info.displayInfo() {
+                if let actual = DeviceScreen(displayInfo: displayInfo), actual != screen {
+                    screenState.withLock { $0 = actual }
+                    encoder = InputActionEncoder(screen: actual)
+                    continuation.yield(.screenChanged(actual))
+                    Self.logger.notice("Display: \(actual.pixelWidth)×\(actual.pixelHeight) @\(actual.scale)x")
+                }
+                if let current = DeviceOrientation(displayInfo: displayInfo) {
+                    orientation = current
+                    continuation.yield(.orientationChanged(current))
+                }
+            }
+        }
 
         // Video
         let videoConnection = try await rsd.connect(service: DisplayService.name)
@@ -111,6 +133,7 @@ public actor NativeSession: MirrorSession {
 
         tasks.append(Task { [weak self] in await self?.watchClipboard() })
         tasks.append(Task { [weak self] in await self?.watchVideo() })
+        tasks.append(Task { [weak self] in await self?.watchOrientation() })
     }
 
     /// RSD connection that offers the DDI services. If they are missing, the Developer Disk Image is
@@ -146,6 +169,27 @@ public actor NativeSession: MirrorSession {
             fresh.close()
         }
         throw DeveloperDiskImageError.cryptexd("the display service did not appear after mounting")
+    }
+
+    // MARK: Orientation
+
+    /// The display's content orientation, polled once a second (the device sends no notification).
+    private func watchOrientation() async {
+        while !Task.isCancelled, !closed {
+            try? await Task.sleep(for: .seconds(1))
+            guard let deviceInfo, let info = try? await deviceInfo.displayInfo(),
+                  let current = DeviceOrientation(displayInfo: info), current != orientation
+            else { continue }
+            orientation = current
+            continuation.yield(.orientationChanged(current))
+        }
+    }
+
+    public func rotate(clockwise: Bool) async throws {
+        guard let rsd else { throw UnsupportedFeatureError("Rotating") }
+        let control = DeviceControlService(connection: try await rsd.connect(service: DeviceControlService.name))
+        defer { control.close() }
+        try await control.rotate(clockwise: clockwise)
     }
 
     // MARK: Input
@@ -320,6 +364,7 @@ public actor NativeSession: MirrorSession {
             }
         }
         hid?.close()
+        deviceInfo?.service.connection.close()
         videoConnection?.close()
         audioConnection?.close()
         rsd?.close()

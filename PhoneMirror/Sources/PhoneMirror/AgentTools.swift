@@ -296,7 +296,9 @@ final class AgentBridge {
         return session
     }
 
-    private var screen: DeviceScreen { controller?.currentScreen ?? .iPhone15 }
+    /// The screen as the agent sees it (upright; width and height swapped in landscape).
+    private var screen: DeviceScreen { controller?.displayedScreen ?? .iPhone15 }
+    private var orientation: DeviceOrientation { controller?.orientation ?? .portrait }
 
     func deviceInfo() -> String {
         let screen = screen
@@ -305,7 +307,7 @@ final class AgentBridge {
         return """
         connected: \(connected)
         connection: \(controller?.transportName ?? "-")
-        screen: \(Int(screen.pointSize.width))×\(Int(screen.pointSize.height)) points (@\(Int(screen.scale))x, \(screen.pixelWidth)×\(screen.pixelHeight) px)
+        screen: \(Int(screen.pointSize.width))×\(Int(screen.pointSize.height)) points (@\(Int(screen.scale))x, \(screen.pixelWidth)×\(screen.pixelHeight) px), \(orientation.rawValue)
         last frame: \(age.map { "\($0) ms ago" } ?? "none")
         accessibility (WebDriverAgent): \(wda.statusDescription)
         """
@@ -321,9 +323,11 @@ final class AgentBridge {
             x: 0, y: extent.height * (1 - frame.visible.height),
             width: extent.width * frame.visible.width, height: extent.height * frame.visible.height
         )
-        let scaled = image.cropped(to: crop)
-            .transformed(by: CGAffineTransform(translationX: 0, y: -crop.minY))
-            .transformed(by: CGAffineTransform(scaleX: size.width / crop.width, y: size.height / crop.height))
+        let orientations: [CGImagePropertyOrientation] = [.up, .right, .down, .left]
+        let upright = image.cropped(to: crop).oriented(orientations[orientation.quarterTurns])
+        let scaled = upright
+            .transformed(by: CGAffineTransform(translationX: -upright.extent.minX, y: -upright.extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: size.width / upright.extent.width, y: size.height / upright.extent.height))
         guard let jpeg = ciContext.jpegRepresentation(
             of: scaled, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
             options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]
@@ -336,10 +340,10 @@ final class AgentBridge {
     func touchPoint(_ point: CGPoint) -> TouchPoint {
         let size = screen.pointSize
         let max = Double(TouchPoint.maxValue)
-        return TouchPoint(
+        return orientation.native(TouchPoint(
             x: UInt16((min(Swift.max(point.x / size.width, 0), 1) * max).rounded()),
             y: UInt16((min(Swift.max(point.y / size.height, 0), 1) * max).rounded())
-        )
+        ))
     }
 
     func send(_ events: [InputEvent]) async throws {
