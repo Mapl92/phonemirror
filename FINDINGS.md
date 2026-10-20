@@ -241,6 +241,21 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
 - [O] While the Camera was running, the iPhone closed the HID connections while video kept running. Since then
   PhoneMirror reconnects HID on a send error and retries the input.
 
+### Native DDI mount without devicectl (2026-10-20)
+
+- [O] `com.apple.security.cryptexd.remote` installs the DDI as a Cryptex1 (`com.apple.MobileAsset.DDI`) on iOS 27.0.1:
+  `read-personalization-id` (chip ID, ECID, production mode), `get-nonce` with the identity's
+  `Cryptex1,NonceDomain` handle (4), TSS request `@Cryptex1,Ticket` to `https://gs.apple.com/TSS/controller?action=2`,
+  then `install` with five XPC file transfers (image, trust cache, IM4M, info, root hash). Took ≈ 2.6 s.
+- [O] File transfers: XPC type `0x1A000` (message ID + `{"s": size}`) in the request; each payload on its own odd
+  HTTP/2 stream, first frame a wrapper with flag `0x00100000` and the transfer ID as message ID. Outbound HTTP/2 flow
+  control is required for the 32 MB image.
+- [O] `uninstall` with `remote-cryptex-identifier` removes the DDI immediately; the display service disappears from RSD,
+  and a new RSD handshake is needed to see it again after mounting.
+- [O] The DDI files come from Xcode's `XcodeSystemResources.pkg` (`/Library/Developer/DeveloperDiskImages/iOS_DDI`,
+  `/Library/Developer/CoreDevice/CandidateDDIs`). `remotepairingd`, `remoted`, `CryptexKitHost` and MobileDevice are
+  part of macOS (`/Library/Apple/System`, `/System`).
+
 ## 6. Open points
 
 - Whether an unlisted service is reachable via `serviceconnection.create` (not tested: invasive).

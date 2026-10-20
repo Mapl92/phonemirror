@@ -17,8 +17,10 @@ Tested with an iPhone 15 on iOS 27.0.1, macOS 27.0.1 and Xcode 27.1:
 
 - iPhone with iOS 27, Developer Mode, and Settings › Developer › "Enable UI Automation" turned on.
 - The iPhone is paired with this Mac (Xcode/Device Hub).
-- Xcode 27 for `devicectl`. The app uses it to mount the Developer Disk Image itself; the iPhone must be unlocked
-  for that.
+- The Developer Disk Image files that Xcode 27 installs in `/Library/Developer/DeveloperDiskImages`. In the native
+  mode PhoneMirror mounts the image itself (no `devicectl`, no running Xcode); the iPhone must be unlocked for that.
+  The `ddiRestorePath` default points PhoneMirror at another unpacked `iOS_DDI/Restore` directory.
+  The pymobiledevice3 mode and agent control (WebDriverAgent via `xcodebuild`) still use Xcode.
 - Only for the "pymobiledevice3" connection mode: `uv tool install pymobiledevice3` (≥ 11.36).
 
 ## Build and run
@@ -136,6 +138,9 @@ Limitations:
 1. `remotepairingd` (libxpc) provides the existing CoreDevice tunnel.
 2. `nettop` finds `remoted`'s RSD port.
 3. RemoteXPC (HTTP/2 + XPC) connects to the display, HID and pasteboard services.
+   If they are missing, PhoneMirror mounts the Developer Disk Image as a cryptex: chip ID, ECID and nonce from
+   `cryptexd`, a personalization ticket from Apple's signing server (`gs.apple.com`), then the install with the
+   payloads as XPC file transfers (~3 s).
 4. Video and audio arrive as RTP over UDP. The app sends RTCP receiver reports and requests a keyframe via PLI after
    packet loss.
 
@@ -143,6 +148,9 @@ Limitations:
 
 Both modes share the tunnel with Apple's `remoted`. While PhoneMirror is running, Xcode and `devicectl` may
 temporarily lose the iPhone.
+
+`swift run native-probe ddi [status|unmount|mount]` checks, removes or mounts the Developer Disk Image (not while the
+app is running).
 
 ## Architecture
 

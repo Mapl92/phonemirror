@@ -17,7 +17,8 @@ public struct NativeTransport: MirrorTransport {
     }
 
     public var displayName: String { "iPhone (nativ)" }
-    public var requiresDevicePreparation: Bool { true }
+    /// The session mounts the Developer Disk Image itself (`DeveloperDiskImageMounter`), without devicectl.
+    public var requiresDevicePreparation: Bool { false }
 
     public func connect() async throws -> any MirrorSession {
         let session = NativeSession(screen: screen)
@@ -59,7 +60,7 @@ public actor NativeSession: MirrorSession {
 
     func start(udid: String?) async throws {
         continuation.yield(.screenChanged(screen))
-        let rsd = try await RemoteServiceDiscovery.connect(udid: udid)
+        let rsd = try await Self.connectWithDeveloperServices(udid: udid)
         self.rsd = rsd
         let sessionID = UUID()
 
@@ -110,6 +111,37 @@ public actor NativeSession: MirrorSession {
 
         tasks.append(Task { [weak self] in await self?.watchClipboard() })
         tasks.append(Task { [weak self] in await self?.watchVideo() })
+    }
+
+    /// RSD connection that offers the DDI services. If they are missing, the Developer Disk Image is
+    /// mounted natively; RSD only lists the new services after a fresh handshake, so it reconnects.
+    private static func connectWithDeveloperServices(udid: String?) async throws -> RemoteServiceDiscovery {
+        let rsd = try await RemoteServiceDiscovery.connect(udid: udid)
+        guard rsd.port(of: DisplayService.name) == nil else { return rsd }
+        do {
+            try await DeveloperDiskImageMounter.mountIfNeeded(rsd: rsd)
+            rsd.close()
+        } catch let error as DeveloperDiskImageError {
+            rsd.close()
+            switch error {
+            case .bundleMissing, .unsupportedOS:
+                // Fallback for older iOS versions or a different DDI layout: Xcode's devicectl, if installed.
+                logger.notice("Native DDI mount not possible (\(error.localizedDescription, privacy: .public)), trying devicectl")
+                guard case .ready = await DevicePreparation.ensureDeveloperDiskImage() else { throw error }
+            default:
+                throw error
+            }
+        } catch {
+            rsd.close()
+            throw error
+        }
+        for _ in 0..<10 {
+            try await Task.sleep(for: .seconds(1))
+            let fresh = try await RemoteServiceDiscovery.connect(udid: udid)
+            if fresh.port(of: DisplayService.name) != nil { return fresh }
+            fresh.close()
+        }
+        throw DeveloperDiskImageError.cryptexd("the display service did not appear after mounting")
     }
 
     // MARK: Input

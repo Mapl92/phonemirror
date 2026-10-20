@@ -17,6 +17,9 @@ public indirect enum XPCValue: Equatable, Sendable {
     case array([XPCValue])
     /// Order as on the wire.
     case dictionary([XPCEntry])
+    /// Announces an out-of-band file transfer: the payload follows on its own HTTP/2 stream whose
+    /// opening frame carries `id` as message ID (see `RemoteXPCConnection.sendFileTransfer`).
+    case fileTransfer(id: UInt64, size: UInt64)
     /// Type without a known layout (e.g. file transfer); only for passing through when reading.
     case unsupported(UInt32)
 
@@ -97,7 +100,7 @@ public enum XPCWireError: Error, Equatable {
 enum XPCType: UInt32 {
     case null = 0x1000, bool = 0x2000, int64 = 0x3000, uint64 = 0x4000, double = 0x5000
     case date = 0x7000, data = 0x8000, string = 0x9000, uuid = 0xA000, fd = 0xB000
-    case array = 0xE000, dictionary = 0xF000
+    case array = 0xE000, dictionary = 0xF000, fileTransfer = 0x1A000
 }
 
 /// Flags of the RemoteXPC frame.
@@ -110,6 +113,8 @@ public struct XPCFlags: OptionSet, Sendable {
     public static let dataPresent = XPCFlags(rawValue: 0x0000_0100)
     public static let wantingReply = XPCFlags(rawValue: 0x0001_0000)
     public static let reply = XPCFlags(rawValue: 0x0002_0000)
+    public static let fileTransferRequest = XPCFlags(rawValue: 0x0010_0000)
+    public static let fileTransferResponse = XPCFlags(rawValue: 0x0020_0000)
     public static let initHandshake = XPCFlags(rawValue: 0x0040_0000)
 }
 
@@ -232,6 +237,10 @@ enum XPCCodec {
             }
             out.u32(UInt32(body.data.count))
             out.data.append(body.data)
+        case .fileTransfer(let id, let size):
+            out.u32(XPCType.fileTransfer.rawValue)
+            out.u64(id)
+            encode(["s": .uint64(size)], into: &out)
         case .unsupported(let type):
             out.u32(type)
         }
@@ -289,6 +298,11 @@ enum XPCCodec {
                 entries.append(XPCEntry(key, try decode(&body)))
             }
             return .dictionary(entries)
+        case .fileTransfer:
+            let id = try reader.u64()
+            let info = try decode(&reader)
+            if case .uint64(let size)? = info["s"] { return .fileTransfer(id: id, size: size) }
+            return .fileTransfer(id: id, size: 0)
         }
     }
 }

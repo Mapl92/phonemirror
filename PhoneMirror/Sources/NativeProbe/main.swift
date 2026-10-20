@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Tests the native transport layer by layer against a real iPhone.
-// Usage: native-probe tunnel | rsd | video [seconds] | audio [seconds]
+// Usage: native-probe tunnel | rsd | video [seconds] | audio [seconds] | ddi [status|unmount|mount]
 import Foundation
 import MirrorCore
 import MirrorNative
@@ -25,6 +25,23 @@ do {
             print("  \(name) → Port \(rsd.port(of: name).map(String.init) ?? "?")")
         }
         rsd.close()
+    case "ddi":
+        // native-probe ddi [status|unmount|mount]
+        let action = CommandLine.arguments.dropFirst(2).first ?? "status"
+        let rsd = try await RemoteServiceDiscovery.connect()
+        defer { rsd.close() }
+        print("iOS \(rsd.properties["OSVersion"]?.stringValue ?? "?"), display service: \(rsd.port(of: DisplayService.name) != nil ? "present" : "missing")")
+        switch action {
+        case "unmount":
+            try await DeveloperDiskImageMounter.unmount(rsd: rsd)
+            print("DDI removed")
+        case "mount":
+            let started = Date()
+            let mounted = try await DeveloperDiskImageMounter.mountIfNeeded(rsd: rsd)
+            print(mounted ? "DDI mounted natively in \(String(format: "%.1f", Date().timeIntervalSince(started))) s" : "DDI was already mounted")
+        default:
+            print("DDI mounted: \(try await DeveloperDiskImageMounter.isMounted(rsd: rsd))")
+        }
     case "video", "audio":
         let seconds = Double(CommandLine.arguments.dropFirst(2).first ?? "5") ?? 5
         let rsd = try await RemoteServiceDiscovery.connect()

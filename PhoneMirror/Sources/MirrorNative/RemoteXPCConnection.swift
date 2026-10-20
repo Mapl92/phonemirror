@@ -105,6 +105,14 @@ public final class RemoteXPCConnection: @unchecked Sendable {
     private var nextMessageID: [UInt32: UInt64] = [rootChannel: 0, replyChannel: 0]
     private var pendingData = Data()
     private var pendingWindow: [UInt32: Int] = [:]
+    // Outbound flow control: only file transfers come near the peer's windows, but every DATA frame
+    // counts – otherwise a transfer overruns the window and the device answers GOAWAY (FLOW_CONTROL_ERROR).
+    private var outboundConnectionWindow = 65_535
+    private var peerInitialWindow = 65_535
+    private var outboundStreamWindows: [UInt32: Int] = [:]
+    private var bufferedDataFrames: [HTTP2Frame] = []
+    private var finishedTransferStreams: Set<UInt32> = []
+    private var nextOutboundStream: UInt32 = 5
     private let lock = NSLock()
     private static let logger = Logger(subsystem: "PhoneMirror", category: "remotexpc")
 
@@ -134,6 +142,7 @@ public final class RemoteXPCConnection: @unchecked Sendable {
         // Read until the device's SETTINGS, then acknowledge.
         while true {
             let frame = try await withTimeout(seconds: 5, "HTTP/2-SETTINGS") { try await self.receiveFrame() }
+            applyFlowControl(frame)
             if frame.type == .settings, !frame.flags.contains(.ack) { break }
             if frame.type == .goAway { throw RemoteXPCError.protocolError("GOAWAY in handshake") }
         }
@@ -206,7 +215,82 @@ public final class RemoteXPCConnection: @unchecked Sendable {
     // MARK: Frames
 
     private func send(_ frame: HTTP2Frame) async throws {
+        if frame.type == .data {
+            outboundConnectionWindow -= frame.payload.count
+            outboundStreamWindows[frame.streamID] = outboundWindow(frame.streamID) - frame.payload.count
+        }
         try await stream.send(frame.encoded())
+    }
+
+    private func outboundWindow(_ stream: UInt32) -> Int {
+        outboundStreamWindows[stream] ?? peerInitialWindow
+    }
+
+    /// Applies WINDOW_UPDATE and SETTINGS from the peer. Returns whether the frame was one of them.
+    @discardableResult
+    private func applyFlowControl(_ frame: HTTP2Frame) -> Bool {
+        switch frame.type {
+        case .windowUpdate:
+            if frame.streamID == 0 {
+                outboundConnectionWindow += Int(frame.windowIncrement)
+            } else {
+                outboundStreamWindows[frame.streamID] = outboundWindow(frame.streamID) + Int(frame.windowIncrement)
+            }
+            return true
+        case .settings where !frame.flags.contains(.ack):
+            if let value = frame.settingsValues.first(where: { $0.0 == HTTP2Frame.settingsInitialWindowSize })?.1 {
+                // A new INITIAL_WINDOW_SIZE shifts every open stream's window retroactively.
+                let delta = Int(value) - peerInitialWindow
+                peerInitialWindow = Int(value)
+                for key in outboundStreamWindows.keys { outboundStreamWindows[key]! += delta }
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Pushes the payload of a `.fileTransfer(id:size:)` announced in the preceding request.
+    /// The bytes travel on a new client stream (odd ID) whose first frame carries `id` as message ID;
+    /// the device acknowledges only after the payload, so it is sent without waiting.
+    public func sendFileTransfer(id: UInt64, data: Data) async throws {
+        let streamID = nextOutboundStream
+        nextOutboundStream += 2
+        try await send(HTTP2Frame(.headers, flags: .endHeaders, streamID: streamID))
+        let preamble = XPCWrapper(flags: [.alwaysSet, .fileTransferRequest], messageID: id).encoded()
+        var pending = preamble + data
+        while !pending.isEmpty {
+            var budget = min(outboundConnectionWindow, outboundWindow(streamID), 16_384)
+            while budget <= 0 {
+                let frame = try await withTimeout(seconds: 30, "flow-control window for file transfer") {
+                    try await self.receiveFrame()
+                }
+                if !applyFlowControl(frame) { try await handleWhileSending(frame) }
+                budget = min(outboundConnectionWindow, outboundWindow(streamID), 16_384)
+            }
+            let chunk = pending.prefix(budget)
+            try await send(HTTP2Frame(.data, streamID: streamID, payload: Data(chunk)))
+            pending.removeFirst(chunk.count)
+        }
+        try await send(HTTP2Frame(.data, flags: .endStream, streamID: streamID))
+        finishedTransferStreams.insert(streamID)
+    }
+
+    /// A frame that arrived while waiting for window: keep data for `receiveResponse`.
+    private func handleWhileSending(_ frame: HTTP2Frame) async throws {
+        switch frame.type {
+        case .data:
+            if !frame.payload.isEmpty { try await replenish(stream: frame.streamID, by: frame.payload.count) }
+            bufferedDataFrames.append(frame)
+        case .goAway:
+            throw RemoteXPCError.protocolError("GOAWAY")
+        case .rstStream where !finishedTransferStreams.contains(frame.streamID):
+            throw RemoteXPCError.protocolError("RST_STREAM on stream \(frame.streamID)")
+        case .ping where !frame.flags.contains(.ack):
+            try await send(HTTP2Frame(.ping, flags: .ack, streamID: 0, payload: frame.payload))
+        default:
+            break
+        }
     }
 
     private func receiveFrame() async throws -> HTTP2Frame {
@@ -217,8 +301,10 @@ public final class RemoteXPCConnection: @unchecked Sendable {
     }
 
     private func receiveDataFrame() async throws -> HTTP2Frame {
+        if !bufferedDataFrames.isEmpty { return bufferedDataFrames.removeFirst() }
         while true {
             let frame = try await receiveFrame()
+            if applyFlowControl(frame) { continue }
             switch frame.type {
             case .data:
                 if !frame.payload.isEmpty { try await replenish(stream: frame.streamID, by: frame.payload.count) }
@@ -226,6 +312,7 @@ public final class RemoteXPCConnection: @unchecked Sendable {
             case .goAway:
                 throw RemoteXPCError.protocolError("GOAWAY")
             case .rstStream:
+                if finishedTransferStreams.contains(frame.streamID) { continue }
                 throw RemoteXPCError.protocolError("RST_STREAM on stream \(frame.streamID)")
             case .ping where !frame.flags.contains(.ack):
                 try await send(HTTP2Frame(.ping, flags: .ack, streamID: 0, payload: frame.payload))

@@ -25,7 +25,8 @@ build WebDriverAgent (`PhoneMirror/Scripts/build-wda.sh`, see [PhoneMirror/READM
 
 ## Requirements
 
-- Mac with macOS 27 and Xcode 27 (installed; PhoneMirror uses its `devicectl`)
+- Mac with macOS 27 and Xcode 27 installed (PhoneMirror mounts the Developer Disk Image itself, but needs the image
+  files Xcode installs; agent control also uses Xcode)
 - iPhone with iOS 27, Developer Mode enabled and paired with this Mac
 - For agent control: an Apple developer account to sign WebDriverAgent once
 
