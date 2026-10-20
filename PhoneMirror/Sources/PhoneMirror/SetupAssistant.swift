@@ -12,8 +12,12 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
     private let pairButton = NSButton(title: "Pair", target: nil, action: nil)
     private let revealButton = NSButton(title: "Show Developer Mode Switch", target: nil, action: nil)
     private let imageStatus = NSTextField(wrappingLabelWithString: "")
-    private let importButton = NSButton(title: "Choose Xcode Download…", target: nil, action: nil)
-    private let downloadButton = NSButton(title: "Open Apple's Download Page", target: nil, action: nil)
+    private let importButton = NSButton(title: "Choose File…", target: nil, action: nil)
+    private let downloadButton = NSButton(title: "Open Download Page", target: nil, action: nil)
+    private let fetchButton = NSButton(title: "Download from Apple…", target: nil, action: nil)
+    private var signIn: AppleDownloadSignInController?
+    /// The Apple Developer session of this app run (memory only), so a retry needs no new sign-in.
+    private static var session: (result: AppleDownloadSignInController.Result, time: Date)?
     private var busy = false {
         didSet { refreshButtons() }
     }
@@ -60,7 +64,9 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
         importButton.action = #selector(chooseImage)
         downloadButton.target = self
         downloadButton.action = #selector(openDownloadPage)
-        let imageButtons = NSStackView(views: [importButton, downloadButton])
+        fetchButton.target = self
+        fetchButton.action = #selector(fetchFromApple)
+        let imageButtons = NSStackView(views: [fetchButton, importButton, downloadButton])
         imageButtons.spacing = 8
         let done = NSButton(title: "Done", target: self, action: #selector(finish))
         done.keyEquivalent = "\r"
@@ -74,7 +80,7 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
                     "PhoneMirror shows the switch in Settings › Privacy & Security › Developer Mode. Turn it on, let the iPhone restart, then confirm “Turn On” and enter the passcode.",
                     button: revealButton, status: developerStatus),
             section("3. Developer Disk Image",
-                    "PhoneMirror needs Apple's Developer Disk Image (about 30 MB). It ships with Xcode: download Xcode from Apple with your Apple Account – installing it is not necessary – and choose the .xip here. An Xcode.app, iOS_DDI.dmg or iOS_DDI folder works too.",
+                    "PhoneMirror needs Apple's Developer Disk Image, which ships with Xcode. “Download from Apple…” signs you in to Apple Developer and fetches just that part – Xcode is not installed. Or choose an Xcode download (.xip), an Xcode.app, iOS_DDI.dmg or an iOS_DDI folder.",
                     button: imageButtons, status: imageStatus),
             done,
         ])
@@ -105,6 +111,7 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
         pairButton.isEnabled = !busy && !isPaired
         revealButton.isEnabled = !busy && isPaired && developerModeOn != true
         importButton.isEnabled = !busy
+        fetchButton.isEnabled = !busy
     }
 
     private func refreshImageStatus() {
@@ -188,6 +195,45 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
                 developerStatus.stringValue = "Now on the iPhone: Settings › Privacy & Security › Developer Mode → on. After the restart, confirm “Turn On”, then click Done."
             } catch {
                 developerStatus.stringValue = "Could not show the switch: \(error.localizedDescription)"
+            }
+            busy = false
+        }
+    }
+
+    /// Sign in to Apple Developer, then read only the needed parts of the newest Xcode `.xip`.
+    @objc private func fetchFromApple() {
+        busy = true
+        if let session = Self.session, Date().timeIntervalSince(session.time) < 20 * 60 {
+            download(session.result)
+            return
+        }
+        imageStatus.stringValue = "Sign in with your Apple Account in the new window…"
+        let controller = AppleDownloadSignInController { [weak self] result in
+            guard let self else { return }
+            self.signIn = nil
+            guard let result else {
+                self.imageStatus.stringValue = "Sign-in cancelled."
+                self.busy = false
+                return
+            }
+            Self.session = (result, Date())
+            self.download(result)
+        }
+        signIn = controller
+        controller.start()
+    }
+
+    private func download(_ result: AppleDownloadSignInController.Result) {
+        imageStatus.stringValue = "Reading \(result.xcodeName) from Apple…"
+        let label = imageStatus
+        Task {
+            do {
+                let (info, report) = try await DeveloperDiskImageStore.importFromApple(xipURL: result.xipURL, cookies: result.cookies) { message in
+                    Task { @MainActor in label.stringValue = message }
+                }
+                imageStatus.stringValue = "✓ Developer Disk Image \(info.build) from \(result.xcodeName). \(report)"
+            } catch {
+                imageStatus.stringValue = error.localizedDescription
             }
             busy = false
         }

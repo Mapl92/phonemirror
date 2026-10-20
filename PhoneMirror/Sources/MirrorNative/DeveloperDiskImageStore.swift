@@ -64,6 +64,24 @@ public enum DeveloperDiskImageStore {
         }.value
     }
 
+    /// Imports the DDI straight from Apple's Xcode download, reading only parts of the `.xip`
+    /// (`cookies` from the user's Apple Developer sign-in). The device verifies the image itself
+    /// (trust cache, personalization ticket); a whole package is additionally checked with pkgutil.
+    public static func importFromApple(xipURL: URL, cookies: [HTTPCookie],
+                                       progress: @escaping @Sendable (String) -> Void = { _ in }) async throws -> (Info, RemoteXIPReport) {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("PhoneMirror-DDI-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let (outcome, report) = try await RemoteXIPFetcher.fetch(xipURL: xipURL, cookies: cookies, into: scratch, progress: progress)
+        let info = try await Task.detached {
+            switch outcome {
+            case .diskImage(let dmg): try importDiskImage(dmg, scratch: scratch, progress: progress)
+            case .package(let package): try importPackage(package, scratch: scratch, progress: progress)
+            }
+        }.value
+        return (info, report)
+    }
+
     private static func importAny(_ source: URL, scratch: URL, progress: @escaping @Sendable (String) -> Void) throws -> Info {
         var isDirectory: ObjCBool = false
         FileManager.default.fileExists(atPath: source.path, isDirectory: &isDirectory)

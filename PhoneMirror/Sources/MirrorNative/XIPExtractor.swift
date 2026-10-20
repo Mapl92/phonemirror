@@ -35,17 +35,7 @@ enum XIPExtractor {
         while reader.remaining > 0 {
             let uncompressedSize = try reader.uint64()
             let compressedSize = try reader.uint64()
-            let chunk = try reader.read(Int(compressedSize))
-            let isXZ = chunk.starts(with: [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00])
-            let data: Data
-            if isXZ {
-                guard let decoded = try? (chunk as NSData).decompressed(using: .lzma) as Data else {
-                    throw XIPError.unsupported("XZ chunk could not be decoded")
-                }
-                data = decoded
-            } else {
-                data = chunk
-            }
+            let data = try decodeChunk(try reader.read(Int(compressedSize)))
             _ = uncompressedSize
             if try cpio.feed(data) { return }
             progress(1 - Double(reader.remaining) / Double(contentLength))
@@ -56,24 +46,50 @@ enum XIPExtractor {
     /// xar header (big endian): magic, header size, version, TOC compressed/uncompressed length, checksum type.
     static func locateContent(_ file: FileHandle) throws -> (offset: UInt64, length: UInt64) {
         try file.seek(toOffset: 0)
-        guard let header = try file.read(upToCount: 28), header.count == 28,
-              header.prefix(4) == Data("xar!".utf8)
-        else { throw XIPError.notXAR }
+        guard let header = try file.read(upToCount: 28) else { throw XIPError.notXAR }
+        let layout = try parseHeader(header)
+        try file.seek(toOffset: layout.tocOffset)
+        guard let toc = try file.read(upToCount: Int(layout.tocLength)) else { throw XIPError.noContent }
+        let content = try parseTOC(toc)
+        return (layout.heapOffset + content.offset, content.length)
+    }
+
+    struct XARLayout {
+        var tocOffset: UInt64
+        var tocLength: UInt64
+        var heapOffset: UInt64 { tocOffset + tocLength }
+    }
+
+    static func parseHeader(_ header: Data) throws -> XARLayout {
+        guard header.count >= 28, header.prefix(4) == Data("xar!".utf8) else { throw XIPError.notXAR }
         let bytes = [UInt8](header)
         let headerSize = UInt64(bytes[4]) << 8 | UInt64(bytes[5])
         let tocCompressed = bytes[8..<16].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
-        try file.seek(toOffset: headerSize)
-        guard let toc = try file.read(upToCount: Int(tocCompressed)), toc.count > 6,
+        return XARLayout(tocOffset: headerSize, tocLength: tocCompressed)
+    }
+
+    /// Offset (relative to the heap) and length of a stored entry (`Content` in a .xip, `Payload` in a .pkg).
+    static func parseTOC(_ toc: Data, entry: String = "Content") throws -> (offset: UInt64, length: UInt64) {
+        guard toc.count > 6,
               // zlib stream: skip the 2-byte header and the 4-byte Adler-32 for raw DEFLATE
               let xml = try? (toc.dropFirst(2).dropLast(4) as NSData).decompressed(using: .zlib) as Data,
               let document = try? XMLDocument(data: xml),
-              let data = try document.nodes(forXPath: "//file[name='Content']/data").first as? XMLElement,
+              let data = try document.nodes(forXPath: "//file[name='\(entry)']/data").first as? XMLElement,
               let offset = data.elements(forName: "offset").first?.stringValue.flatMap(UInt64.init),
               let length = data.elements(forName: "length").first?.stringValue.flatMap(UInt64.init)
         else { throw XIPError.noContent }
         let encoding = data.elements(forName: "encoding").first?.attribute(forName: "style")?.stringValue ?? "application/octet-stream"
         guard encoding == "application/octet-stream" else { throw XIPError.unsupported("Content encoding \(encoding)") }
-        return (headerSize + tocCompressed + offset, length)
+        return (offset, length)
+    }
+
+    /// Decodes one pbzx chunk (XZ or stored).
+    static func decodeChunk(_ chunk: Data) throws -> Data {
+        guard chunk.starts(with: [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]) else { return chunk }
+        guard let decoded = try? (chunk as NSData).decompressed(using: .lzma) as Data else {
+            throw XIPError.unsupported("XZ chunk could not be decoded")
+        }
+        return decoded
     }
 }
 
