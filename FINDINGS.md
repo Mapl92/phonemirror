@@ -256,6 +256,20 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
   `/Library/Developer/CoreDevice/CandidateDDIs`). `remotepairingd`, `remoted`, `CryptexKitHost` and MobileDevice are
   part of macOS (`/Library/Apple/System`, `/System`).
 
+### Pairing without Xcode tools (2026-10-20)
+
+- [O] `remotepairingd` (part of macOS, `/Library/Apple/System/.../RemotePairing.framework`, registered by launchd as
+  `com.apple.CoreDevice.remotepairingd`) handles pairing on its own. `RemotePairing.UnpairRequest` with
+  `deviceUDID` on the device connection unpairs (`authState` → `unauthenticated`); `RemotePairing.InitiatePairingCommand`
+  with `requireNonInteractive = false` shows "Trust this computer" plus the passcode prompt on the iPhone and replies
+  with `authState = authenticated` once confirmed.
+- [O] After re-pairing this way (iPhone on USB), the tunnel, RSD, the already mounted DDI and PhoneMirror's mirroring
+  worked unchanged. No Xcode process was involved in pairing.
+- [O] The iPhone reports `isWirelesslyPairableDevice = false`: initial pairing needs a USB cable.
+- [?] Whether the tunnel then also comes up over Wi-Fi without the cable (as after Xcode's pairing) is untested.
+- [O] Over RSD the device offers `com.apple.amfi.lockdown.shim.remote`, which pymobiledevice3 uses to reveal the
+  Developer Mode switch – a way to enable Developer Mode without Xcode (not implemented yet).
+
 ## 6. Open points
 
 - Whether an unlisted service is reachable via `serviceconnection.create` (not tested: invasive).

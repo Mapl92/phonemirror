@@ -45,6 +45,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
     private var browseConnection: xpc_connection_t?
     private var deviceConnection: xpc_connection_t?
     private var assertionIdentifier: xpc_object_t?
+    private var deviceInfo: xpc_object_t?
     private static let logger = Logger(subsystem: "PhoneMirror", category: "tunnel")
     private static let replyTimeout: Double = 10
 
@@ -85,6 +86,38 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         return tunnelAddress!
     }
 
+    /// Only looks the device up (no pairing, no tunnel); see `deviceDescription`.
+    public func find(udid wanted: String? = nil) throws {
+        _ = try browse(udid: wanted)
+    }
+
+    /// remotepairingd's description of the found device (pairing and connection state), for diagnostics.
+    public var deviceDescription: String {
+        guard let deviceInfo, let text = xpc_copy_description(deviceInfo) as UnsafeMutablePointer<CChar>? else { return "–" }
+        defer { free(text) }
+        return String(cString: text)
+    }
+
+    /// Sends a RemotePairing command on the device connection (e.g. `RemotePairing.UnpairRequest`,
+    /// `RemotePairing.InitiatePairingCommand`) and returns the reply's description. Diagnostics/onboarding.
+    public func command(_ typeName: String, udid wanted: String? = nil, timeout: Double = 10,
+                        flags: [String: Bool] = [:], strings: [String: String] = [:]) throws -> String {
+        if deviceConnection == nil {
+            let endpoint = try browse(udid: wanted)
+            let device = xpc_connection_create_from_endpoint(endpoint)
+            xpc_connection_set_event_handler(device) { _ in }
+            xpc_connection_activate(device)
+            deviceConnection = device
+        }
+        let response = try request(deviceConnection!, typeName, timeout: timeout) { body in
+            for (key, value) in flags { xpc_dictionary_set_bool(body, key, value) }
+            for (key, value) in strings { xpc_dictionary_set_string(body, key, value) }
+        }
+        guard let text = xpc_copy_description(response) as UnsafeMutablePointer<CChar>? else { return "–" }
+        defer { free(text) }
+        return String(cString: text)
+    }
+
     public func close() {
         if let device = deviceConnection, let assertion = assertionIdentifier {
             _ = try? request(device, "RemotePairing.ReleaseAssertionRequest") { body in
@@ -101,7 +134,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
     private func browse(udid wanted: String?) throws -> xpc_endpoint_t {
         let connection = xpc_connection_create_mach_service("com.apple.CoreDevice.remotepairingd", queue, 0)
         let found = DispatchSemaphore(value: 0)
-        let result = LockedBox<(endpoint: xpc_endpoint_t, udid: String)?>(nil)
+        let result = LockedBox<(endpoint: xpc_endpoint_t, udid: String, info: xpc_object_t)?>(nil)
 
         xpc_connection_set_event_handler(connection) { event in
             guard xpc_get_type(event) == XPC_TYPE_DICTIONARY,
@@ -115,7 +148,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
             if let wanted, udid != wanted { return }
             let isFirst = result.withLock { current in
                 guard current == nil else { return false }
-                current = (endpoint, udid)
+                current = (endpoint, udid, info)
                 return true
             }
             if isFirst { found.signal() }
@@ -135,11 +168,13 @@ public final class RemotePairingTunnel: @unchecked Sendable {
               let device = result.withLock({ $0 })
         else { throw NativeTunnelError.deviceNotFound }
         udid = device.udid
+        deviceInfo = device.info
         return device.endpoint
     }
 
     /// Send `{mangledTypeName, value}` and wait synchronously for the reply.
-    private func request(_ connection: xpc_connection_t, _ typeName: String, body setup: (xpc_object_t) -> Void) throws -> xpc_object_t {
+    private func request(_ connection: xpc_connection_t, _ typeName: String, timeout: Double = replyTimeout,
+                         body setup: (xpc_object_t) -> Void) throws -> xpc_object_t {
         let body = xpc_dictionary_create(nil, nil, 0)
         setup(body)
         let message = xpc_dictionary_create(nil, nil, 0)
@@ -151,7 +186,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
             reply.withLock { $0 = response }
             done.signal()
         }
-        guard done.wait(timeout: .now() + Self.replyTimeout) == .success, let response = reply.withLock({ $0 }) else {
+        guard done.wait(timeout: .now() + timeout) == .success, let response = reply.withLock({ $0 }) else {
             throw NativeTunnelError.timeout(typeName)
         }
         if xpc_get_type(response) == XPC_TYPE_ERROR {

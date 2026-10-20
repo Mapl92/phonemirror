@@ -21,10 +21,32 @@ do {
         let properties = rsd.properties
         print("Device: \(properties["ProductType"]?.stringValue ?? "?") iOS \(properties["OSVersion"]?.stringValue ?? "?")")
         print("\(rsd.services.count) services")
-        for name in rsd.services.keys.sorted() where name.contains("display") || name.contains("hid") || name.contains("pasteboard") || name.contains("devicecontrol") {
+        let all = CommandLine.arguments.dropFirst(2).first == "all"
+        for name in rsd.services.keys.sorted() where all || name.contains("display") || name.contains("hid") || name.contains("pasteboard") || name.contains("devicecontrol") {
             print("  \(name) → Port \(rsd.port(of: name).map(String.init) ?? "?")")
         }
         rsd.close()
+    case "device":
+        // native-probe device – what remotepairingd knows about the device (no tunnel).
+        let tunnel = RemotePairingTunnel()
+        try tunnel.find()
+        print(tunnel.deviceDescription)
+        tunnel.close()
+    case "pairing":
+        // native-probe pairing <MangledType> [timeout] [key=true …] – e.g. RemotePairing.UnpairRequest
+        let arguments = Array(CommandLine.arguments.dropFirst(2))
+        let type = arguments.first ?? "RemotePairing.InitiatePairingCommand"
+        let timeout = arguments.count > 1 ? Double(arguments[1]) ?? 10 : 10
+        var flags: [String: Bool] = [:]
+        var strings: [String: String] = [:]
+        for pair in arguments.dropFirst(2) {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            if parts[1] == "true" || parts[1] == "false" { flags[parts[0]] = parts[1] == "true" } else { strings[parts[0]] = parts[1] }
+        }
+        let tunnel = RemotePairingTunnel()
+        print(try tunnel.command(type, timeout: timeout, flags: flags, strings: strings))
+        tunnel.close()
     case "ddi":
         // native-probe ddi [status|unmount|mount]
         let action = CommandLine.arguments.dropFirst(2).first ?? "status"
