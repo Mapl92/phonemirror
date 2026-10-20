@@ -275,6 +275,21 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
   `com.apple.amfi.lockdown.shim.remote` with `{"action": 0}` reveals the Developer Mode switch (`success: true`).
   PhoneMirror's setup assistant uses both.
 
+### Developer Disk Image without an installed Xcode (2026-10-20)
+
+- [O] No separate public download: `devicectl manage ddis update` only copies DDIs from Xcode.app or
+  `/Library/Developer/CoreDevice/CandidateDDIs`. Xcode's MobileAsset type `com.apple.MobileAsset.XcodeDeviceSupport`
+  (Pallas, `gdmf.apple.com/v2/assets`) currently returns no assets for the external audience.
+- [O] The DDI ships inside Xcode as `Contents/Resources/Packages/XcodeSystemResources.pkg` (148 MB, "signed Apple
+  Software") → `Library/Developer/CoreDevice/CandidateDDIs/iOS_DDI.dmg` (32 MB, UDZO) → `Restore/` with the
+  BuildManifest and cryptex payloads, the same layout as `/Library/Developer/DeveloperDiskImages/iOS_DDI`.
+- [O] PhoneMirror imports it from the user's own Xcode download without expanding Xcode: the `.xip` is a xar archive
+  whose `Content` is pbzx (chunks of XZ or stored data) around a cpio stream; reading it sequentially yields just the
+  package. `pkgutil --check-signature` verifies Apple's signature on the `.xip` and the package.
+- [O] Import from Xcode.app took 2.2 s; mounting from PhoneMirror's own copy (`~/Library/Application Support/
+  PhoneMirror/DDI`) worked the same as from Xcode's (2.0 s).
+- [?] Import from a real Xcode `.xip` is covered by a synthetic test only (no `.xip` on this Mac).
+
 ## 6. Open points
 
 - Whether an unlisted service is reachable via `serviceconnection.create` (not tested: invasive).

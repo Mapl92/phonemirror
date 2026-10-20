@@ -59,6 +59,15 @@ do {
     case "ddi":
         // native-probe ddi [status|unmount|mount]
         let action = CommandLine.arguments.dropFirst(2).first ?? "status"
+        if action == "import" {
+            // native-probe ddi import <Xcode.xip | Xcode.app | .pkg | .dmg | folder>
+            let source = URL(fileURLWithPath: CommandLine.arguments.dropFirst(3).first ?? "/Applications/Xcode.app")
+            let started = Date()
+            let info = try await DeveloperDiskImageStore.importDDI(from: source) { print("  \($0)") }
+            print("Imported \(info.build) to \(info.restoreDirectory.path) in \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
+            print("Selected DDI: \(DeveloperDiskImageStore.installed().map { "\($0.build) at \($0.restoreDirectory.path)" } ?? "none")")
+            break
+        }
         let rsd = try await RemoteServiceDiscovery.connect()
         defer { rsd.close() }
         print("iOS \(rsd.properties["OSVersion"]?.stringValue ?? "?"), display service: \(rsd.port(of: DisplayService.name) != nil ? "present" : "missing")")

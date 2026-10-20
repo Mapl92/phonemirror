@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import MirrorNative
+import UniformTypeIdentifiers
 
 /// Pairs the iPhone with this Mac through `remotepairingd` and reveals the Developer Mode switch via AMFI –
 /// the two steps that otherwise need Xcode. The mirror connection pauses while the assistant is open.
@@ -10,6 +11,9 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
     private let developerStatus = NSTextField(wrappingLabelWithString: "")
     private let pairButton = NSButton(title: "Pair", target: nil, action: nil)
     private let revealButton = NSButton(title: "Show Developer Mode Switch", target: nil, action: nil)
+    private let imageStatus = NSTextField(wrappingLabelWithString: "")
+    private let importButton = NSButton(title: "Choose Xcode Download…", target: nil, action: nil)
+    private let downloadButton = NSButton(title: "Open Apple's Download Page", target: nil, action: nil)
     private var busy = false {
         didSet { refreshButtons() }
     }
@@ -19,7 +23,7 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 560),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Set Up iPhone"
         super.init(window: window)
@@ -52,6 +56,12 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
         pairButton.action = #selector(pair)
         revealButton.target = self
         revealButton.action = #selector(revealDeveloperMode)
+        importButton.target = self
+        importButton.action = #selector(chooseImage)
+        downloadButton.target = self
+        downloadButton.action = #selector(openDownloadPage)
+        let imageButtons = NSStackView(views: [importButton, downloadButton])
+        imageButtons.spacing = 8
         let done = NSButton(title: "Done", target: self, action: #selector(finish))
         done.keyEquivalent = "\r"
 
@@ -63,18 +73,21 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
             section("2. Turn on Developer Mode",
                     "PhoneMirror shows the switch in Settings › Privacy & Security › Developer Mode. Turn it on, let the iPhone restart, then confirm “Turn On” and enter the passcode.",
                     button: revealButton, status: developerStatus),
+            section("3. Developer Disk Image",
+                    "PhoneMirror needs Apple's Developer Disk Image (about 30 MB). It ships with Xcode: download Xcode from Apple with your Apple Account – installing it is not necessary – and choose the .xip here. An Xcode.app, iOS_DDI.dmg or iOS_DDI folder works too.",
+                    button: imageButtons, status: imageStatus),
             done,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 18
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        stack.setCustomSpacing(24, after: stack.views[2])
+        stack.setCustomSpacing(24, after: stack.views[3])
         done.translatesAutoresizingMaskIntoConstraints = false
         return stack
     }
 
-    private func section(_ heading: String, _ text: String, button: NSButton, status: NSTextField) -> NSView {
+    private func section(_ heading: String, _ text: String, button: NSView, status: NSTextField) -> NSView {
         let headingLabel = NSTextField(labelWithString: heading)
         headingLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         let body = NSTextField(wrappingLabelWithString: text)
@@ -91,6 +104,17 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
     private func refreshButtons() {
         pairButton.isEnabled = !busy && !isPaired
         revealButton.isEnabled = !busy && isPaired && developerModeOn != true
+        importButton.isEnabled = !busy
+    }
+
+    private func refreshImageStatus() {
+        if let image = DeveloperDiskImageStore.installed() {
+            imageStatus.stringValue = "✓ Developer Disk Image \(image.build) is available."
+        } else if let xcode = DeveloperDiskImageStore.xcodeApplications().first {
+            imageStatus.stringValue = "Will be taken from \(xcode.lastPathComponent) automatically."
+        } else {
+            imageStatus.stringValue = "Not found yet."
+        }
     }
 
     // MARK: Steps
@@ -99,6 +123,7 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
     private func refresh() async {
         busy = true
         defer { busy = false }
+        refreshImageStatus()
         pairStatus.stringValue = "Looking for the iPhone…"
         let summary = await Task.detached { () -> RemotePairingTunnel.DeviceSummary? in
             let tunnel = RemotePairingTunnel()
@@ -163,6 +188,33 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
                 developerStatus.stringValue = "Now on the iPhone: Settings › Privacy & Security › Developer Mode → on. After the restart, confirm “Turn On”, then click Done."
             } catch {
                 developerStatus.stringValue = "Could not show the switch: \(error.localizedDescription)"
+            }
+            busy = false
+        }
+    }
+
+    @objc private func openDownloadPage() {
+        NSWorkspace.shared.open(URL(string: "https://developer.apple.com/download/all/?q=Xcode")!)
+    }
+
+    @objc private func chooseImage() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose an Xcode download (.xip), Xcode.app, iOS_DDI.dmg or an iOS_DDI folder."
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = ["xip", "app", "pkg", "dmg"].compactMap { UTType(filenameExtension: $0) } + [.folder]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        busy = true
+        imageStatus.stringValue = "Importing…"
+        let label = imageStatus
+        Task {
+            do {
+                let info = try await DeveloperDiskImageStore.importDDI(from: url) { message in
+                    Task { @MainActor in label.stringValue = message }
+                }
+                imageStatus.stringValue = "✓ Developer Disk Image \(info.build) imported."
+            } catch {
+                imageStatus.stringValue = error.localizedDescription
             }
             busy = false
         }

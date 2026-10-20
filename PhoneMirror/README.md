@@ -18,9 +18,12 @@ Tested with an iPhone 15 on iOS 27.0.1, macOS 27.0.1 and Xcode 27.1:
 - iPhone with iOS 27 and Developer Mode on; for agent control also Settings › Developer › "Enable UI Automation".
 - The iPhone is paired with this Mac. **Device › Set Up iPhone…** pairs it without Xcode (USB cable once, then
   Wi-Fi is enough) and shows the hidden Developer Mode switch on the iPhone. Pairing via Xcode/Device Hub works too.
-- The Developer Disk Image files that Xcode 27 installs in `/Library/Developer/DeveloperDiskImages`. In the native
-  mode PhoneMirror mounts the image itself (no `devicectl`, no running Xcode); the iPhone must be unlocked for that.
-  The `ddiRestorePath` default points PhoneMirror at another unpacked `iOS_DDI/Restore` directory.
+- Apple's Developer Disk Image. PhoneMirror uses Xcode's copy in `/Library/Developer/DeveloperDiskImages` if present,
+  otherwise its own copy in `~/Library/Application Support/PhoneMirror/DDI`. **Device › Set Up iPhone…** imports it
+  from an Xcode download (`.xip`, Xcode does not have to be installed), an `Xcode.app`, `XcodeSystemResources.pkg`,
+  `iOS_DDI.dmg` or an `iOS_DDI` folder; Apple's package signature is checked. An Xcode in /Applications is used
+  automatically. The native mode mounts the image itself (no `devicectl`); the iPhone must be unlocked for that.
+  A new major iOS version needs the DDI from a matching Xcode.
   The pymobiledevice3 mode and agent control (WebDriverAgent via `xcodebuild`) still use Xcode.
 - Only for the "pymobiledevice3" connection mode: `uv tool install pymobiledevice3` (≥ 11.36).
 
@@ -150,8 +153,8 @@ Limitations:
 Both modes share the tunnel with Apple's `remoted`. While PhoneMirror is running, Xcode and `devicectl` may
 temporarily lose the iPhone.
 
-`swift run native-probe ddi [status|unmount|mount]` checks, removes or mounts the Developer Disk Image (not while the
-app is running).
+`swift run native-probe ddi [status|unmount|mount]` checks, removes or mounts the Developer Disk Image, and
+`native-probe ddi import <xip|app|pkg|dmg|folder>` imports one (not while the app is running).
 
 ## Architecture
 

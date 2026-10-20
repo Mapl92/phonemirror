@@ -11,11 +11,12 @@ public enum DeveloperDiskImageError: LocalizedError {
     case developerModeOff
     case signing(String)
     case cryptexd(String)
+    case importFailed(String)
 
     public var errorDescription: String? {
         switch self {
-        case .bundleMissing(let path):
-            "No Developer Disk Image found at \(path). It is installed with Xcode (it stays after Xcode is deleted)."
+        case .bundleMissing:
+            "PhoneMirror needs Apple's Developer Disk Image. Choose Device › Set Up iPhone… to take it from an Xcode download – Xcode does not have to be installed."
         case .unsupportedOS(let version):
             "iOS \(version) installs the Developer Disk Image differently; iOS 26.4 or later is required."
         case .locked:
@@ -26,6 +27,8 @@ public enum DeveloperDiskImageError: LocalizedError {
             "Apple's signing server refused the Developer Disk Image: \(message)"
         case .cryptexd(let message):
             "Mounting the Developer Disk Image failed: \(message)"
+        case .importFailed(let message):
+            "Importing the Developer Disk Image failed: \(message)"
         }
     }
 }
@@ -34,12 +37,9 @@ public enum DeveloperDiskImageError: LocalizedError {
 public struct DeveloperDiskImageBundle: @unchecked Sendable {
     public static let defaultRestoreDirectory = URL(fileURLWithPath: "/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore")
 
-    /// The `ddiRestorePath` default overrides the location (e.g. a DDI copied from another Mac's Xcode).
+    /// The newest DDI known to `DeveloperDiskImageStore` (own copy, Xcode's, or the `ddiRestorePath` default).
     public static var restoreDirectory: URL {
-        if let custom = UserDefaults.standard.string(forKey: "ddiRestorePath") {
-            return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath)
-        }
-        return defaultRestoreDirectory
+        DeveloperDiskImageStore.installed()?.restoreDirectory ?? defaultRestoreDirectory
     }
 
     static let variantSuffix = "Developer Disk Image Cryptex"
@@ -306,6 +306,11 @@ public enum DeveloperDiskImageMounter {
         let cryptexd = CryptexdService(rsd: rsd)
         if try await cryptexd.isDDIInstalled() { return false }
 
+        if DeveloperDiskImageStore.installed() == nil, let xcode = DeveloperDiskImageStore.xcodeApplications().first {
+            // An Xcode that was downloaded but never set up still carries the DDI.
+            logger.notice("Taking the Developer Disk Image from \(xcode.path, privacy: .public)")
+            _ = try await DeveloperDiskImageStore.importDDI(from: xcode)
+        }
         let bundle = try DeveloperDiskImageBundle()
         logger.notice("Mounting Developer Disk Image \(bundle.buildVersion, privacy: .public)")
         let chip = try await cryptexd.chipInstance()

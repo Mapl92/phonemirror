@@ -252,6 +252,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private static func needsSetup(_ error: Error) -> Bool {
         if case NativeTunnelError.notPaired = error { return true }
         if case DeveloperDiskImageError.developerModeOff = error { return true }
+        if case DeveloperDiskImageError.bundleMissing = error { return true }
         return false
     }
 
