@@ -126,6 +126,36 @@ fi
 
 (cd "$OUT" && shasum -a 256 "PhoneMirror-$VERSION.zip" "PhoneMirror-$VERSION.dmg" > SHA256SUMS.txt)
 
+# MARK: Sparkle appcast
+
+if [[ $DRY_RUN == 0 ]]; then
+  step "Adding $TAG to appcast.xml"
+  SIGN_UPDATE=$(find .build/artifacts -path "*Sparkle/bin/sign_update" | head -1)
+  [[ -x "$SIGN_UPDATE" ]] || fail "Sparkle's sign_update not found (swift package resolve)."
+  # Signs with the EdDSA key from the login keychain (created once with Sparkle's generate_keys).
+  SPARKLE_SIGNATURE=$("$SIGN_UPDATE" "$ZIP")
+  BUILD=$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")
+  python3 -I - "../appcast.xml" "$VERSION" "$BUILD" "$SPARKLE_SIGNATURE" <<'PY'
+import sys, email.utils
+path, version, build, signature = sys.argv[1:5]
+base = "https://github.com/Mapl92/phonemirror/releases"
+item = f"""    <item>
+      <title>Version {version}</title>
+      <pubDate>{email.utils.formatdate(localtime=False)}</pubDate>
+      <sparkle:version>{build}</sparkle:version>
+      <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>{base}/tag/v{version}</sparkle:releaseNotesLink>
+      <enclosure url="{base}/download/v{version}/PhoneMirror-{version}.zip" {signature} type="application/octet-stream"/>
+    </item>
+"""
+text = open(path).read()
+marker = "    <language>en</language>\n"
+assert marker in text, "unexpected appcast.xml layout"
+open(path, "w").write(text.replace(marker, marker + item, 1))
+PY
+fi
+
 # MARK: Verify
 
 step "Gatekeeper check"
@@ -160,6 +190,7 @@ if [[ $GITHUB == 1 ]]; then
   gh release create "$TAG" --draft --target "$(git rev-parse HEAD)" --title "PhoneMirror $VERSION" \
     --notes-file "$NOTES" "$ZIP" "$DMG" "$OUT/SHA256SUMS.txt"
   echo "Draft created – review and publish it on GitHub."
+  echo "After publishing: commit and push appcast.xml so existing installations see the update."
 fi
 
 step "Done"

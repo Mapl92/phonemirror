@@ -58,6 +58,11 @@ open build/PhoneMirror.app --args -replay /tmp/test.h265
 | ⌘⌥T | Audio on/off |
 | Device › Share Clipboard | Mac ↔ iPhone clipboard sync on/off |
 | Device › Connection | Native or pymobiledevice3 |
+| ⌥⌘← / ⌥⌘→ | Rotate the iPhone's UI (the window follows portrait/landscape) |
+| ⌘S | Screenshot (upright, full resolution) → ~/Pictures/PhoneMirror |
+| ⇧⌘R | Start/stop a recording with sound (HEVC + AAC) → ~/Movies/PhoneMirror |
+| Device › iPhone | Choose among several iPhones (default: the first paired one) |
+| ⇧⌘T | Window › Keep on Top |
 | ⌘+ / ⌘− / ⌘0 | Window size; size and position are remembered |
 
 Edge gestures:
@@ -188,6 +193,12 @@ notarizes and staples the app and a DMG, writes `SHA256SUMS.txt` and creates a *
 without notarization or GitHub, to check that everything still works under the hardened runtime.
 `--no-github` notarizes but skips the GitHub release.
 
+**Automatic updates (Sparkle).** The release script signs the ZIP with Sparkle's EdDSA key (in the login keychain,
+created once with `.build/artifacts/sparkle/Sparkle/bin/generate_keys`; back it up with `generate_keys -x <file>`
+and store it safely – without it no further updates can be published) and adds the version to `appcast.xml` in the
+repository root. Installed apps read that file from GitHub, so **commit and push `appcast.xml` after publishing the
+release**, not before.
+
 ## DDI position hints (maintainers)
 
 Without a hint, "Download from Apple…" indexes the whole Xcode archive (≈ 600 sequential requests, ≈ 2 minutes,
@@ -207,7 +218,6 @@ in the [main README](../README.md).
 ## Open issues
 
 - **Video latency:** Measure it properly and add RCTL feedback if needed (disabled by default in pymobiledevice3).
-- **Display size:** Not read from the device; the iPhone 15 is the default.
 - **Native clipboard:** Polled once per second instead of using a Darwin notification. Only the primary types are
   read; fetching all representations blocks the iOS service (≥ 8 s, up to 64 s according to pymobiledevice3).
 - **Probe tool:** Don't run `native-probe` while the app is running. The second RSD connection disrupts the app's

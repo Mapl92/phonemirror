@@ -7,6 +7,8 @@ Device Hub.
 ## Features
 
 - Live video at about 60 fps (HEVC, hardware decoding), audio, touch, keyboard, Home/Lock/Volume buttons
+- Any iPhone model and both portrait and landscape; rotate from the Mac (⌥⌘← / ⌥⌘→)
+- Screenshots (⌘S) and screen recordings with sound (⇧⌘R), Keep on Top, several iPhones
 - Clipboard sync in both directions, including rich text
 - Automatic reconnect and Developer Disk Image mounting
 - MCP server for AI agents: accessibility tree, tap by label, text input, screenshots, app launching
@@ -18,7 +20,8 @@ Protocol findings: **[FINDINGS.md](FINDINGS.md)**
 
 Get the latest signed and notarized build from the
 **[Releases page](https://github.com/Mapl92/phonemirror/releases/latest)**: open `PhoneMirror-<version>.dmg` and drag
-PhoneMirror to Applications. SHA-256 checksums are attached to each release.
+PhoneMirror to Applications. SHA-256 checksums are attached to each release. From version 0.7 on, PhoneMirror updates
+itself (Sparkle; PhoneMirror › Check for Updates…).
 
 The download covers mirroring and control. For the agent accessibility tree you still need this repository once to
 build WebDriverAgent (`PhoneMirror/Scripts/build-wda.sh`, see [PhoneMirror/README.md](PhoneMirror/README.md)).

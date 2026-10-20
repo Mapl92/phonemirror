@@ -12,23 +12,32 @@ let package = Package(
         .executable(name: "native-probe", targets: ["NativeProbe"]),
         .library(name: "MirrorCore", targets: ["MirrorCore"]),
     ],
+    dependencies: [
+        // Automatic updates for the downloaded app (MIT license).
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+    ],
     targets: [
-        // Gerätunabhängiger Kern: Transport-Abstraktion, HEVC-Verarbeitung, Eingabe-Mapping.
+        // Device-independent core: transport abstraction, HEVC processing, input mapping.
         .target(name: "MirrorCore"),
-        // Nativer Transport ohne Python: Tunnel, RemoteXPC, CoreDevice-Dienste.
-        // Nachgebaut nach pymobiledevice3 – daher GPL-3.0-or-later (siehe Dateiköpfe).
+        // Native transport without Python: tunnel, RemoteXPC, CoreDevice services.
+        // Recreated after pymobiledevice3 – hence GPL-3.0-or-later (see file headers).
         .target(name: "MirrorNative", dependencies: ["MirrorCore", "CZlib"]),
-        // System-zlib: Das Medienangebot muss byte-genau mit Stufe 9 komprimiert sein.
+        // System zlib: the media offer must be compressed byte-exactly at level 9.
         .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
         .executableTarget(name: "NativeProbe", dependencies: ["MirrorNative"]),
-        // MCP-Server (Streamable HTTP, JSON-RPC) für die Steuerung durch Agents.
+        // MCP server (Streamable HTTP, JSON-RPC) for control by agents.
         .target(name: "MirrorMCP"),
-        // Erzeugt synthetische HEVC-Streams (Annex B) für Tests und den Replay-Transport.
+        // Generates synthetic HEVC streams (Annex B) for tests and the replay transport.
         .target(name: "MirrorTestSupport", dependencies: ["MirrorCore"]),
         .executableTarget(name: "HEVCTestStream", dependencies: ["MirrorCore", "MirrorTestSupport"]),
-        // Wandelt RTP-Mitschnitte (pymobiledevice3 start-video-stream) in Annex-B-Dateien.
+        // Converts RTP captures (pymobiledevice3 start-video-stream) into Annex B files.
         .executableTarget(name: "RTPDumpToH265", dependencies: ["MirrorCore"]),
-        .executableTarget(name: "PhoneMirror", dependencies: ["MirrorCore", "MirrorNative", "MirrorMCP"]),
+        .executableTarget(
+            name: "PhoneMirror",
+            dependencies: ["MirrorCore", "MirrorNative", "MirrorMCP", .product(name: "Sparkle", package: "Sparkle")],
+            // Sparkle.framework is embedded in Contents/Frameworks by Scripts/bundle-app.sh.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
+        ),
         .testTarget(name: "MirrorCoreTests", dependencies: ["MirrorCore", "MirrorTestSupport", "MirrorNative", "MirrorMCP"]),
     ]
 )

@@ -4,6 +4,7 @@ import MirrorCore
 import MirrorMCP
 import MirrorNative
 import os
+import Sparkle
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,6 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mcpServer: MCPHTTPServer?
     private var wdaWarmup: Task<Void, Never>?
     private var setupAssistant: SetupAssistantController?
+    /// Sparkle checks the appcast on GitHub; only in a bundled app (development builds have no feed URL).
+    private let updater: SPUStandardUpdaterController? =
+        Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") == nil
+            ? nil : SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     /// iPhones remotepairingd knows, refreshed in the background for the device menu.
     private var knownDevices: [RemotePairingTunnel.DeviceSummary] = []
     private let deviceMenu = NSMenu(title: "iPhone")
@@ -71,6 +76,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mainMenu = NSMenu()
 
         let appMenu = NSMenu()
+        if let updater {
+            let check = NSMenuItem(title: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+            check.target = updater
+            appMenu.addItem(check)
+            appMenu.addItem(.separator())
+        }
         appMenu.addItem(withTitle: "Quit PhoneMirror", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         mainMenu.addItem(submenu: appMenu, title: "PhoneMirror")
 
