@@ -1,0 +1,92 @@
+[
+  {
+    "archiveSize" : 2027369056,
+    "image" : {
+      "dataStart" : 2489,
+      "name" : "./Library/Developer/CoreDevice/CandidateDDIs/iOS_DDI.dmg",
+      "size" : 33164288
+    },
+    "inner" : [
+      {
+        "compressed" : 15100608,
+        "length" : 16777216,
+        "offset" : 4177,
+        "start" : 0
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 15104801,
+        "start" : 16777216
+      }
+    ],
+    "outer" : [
+      {
+        "compressed" : 9943592,
+        "length" : 16777216,
+        "offset" : 1063264318,
+        "start" : 4966055936
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 1073207926,
+        "start" : 4982833152
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 1089985158,
+        "start" : 4999610368
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 1106762390,
+        "start" : 5016387584
+      },
+      {
+        "compressed" : 15231384,
+        "length" : 16777216,
+        "offset" : 1123539622,
+        "start" : 5033164800
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 1138771022,
+        "start" : 5049942016
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 1155548254,
+        "start" : 5066719232
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 1172325486,
+        "start" : 5083496448
+      },
+      {
+        "compressed" : 16777216,
+        "length" : 16777216,
+        "offset" : 1189102718,
+        "start" : 5100273664
+      },
+      {
+        "compressed" : 5012052,
+        "length" : 16777216,
+        "offset" : 1205879950,
+        "start" : 5117050880
+      }
+    ],
+    "package" : {
+      "dataStart" : 4974177516,
+      "name" : "./Xcode.app/Contents/Resources/Packages/XcodeSystemResources.pkg",
+      "size" : 147881043
+    },
+    "xip" : "Xcode_27.1/Xcode_27.1.xip"
+  }
+]

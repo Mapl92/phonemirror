@@ -290,6 +290,18 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
   PhoneMirror/DDI`) worked the same as from Xcode's (2.0 s).
 - [?] Import from a real Xcode `.xip` is covered by a synthetic test only (no `.xip` on this Mac).
 
+### DDI straight from Apple with partial downloads (2026-10-20)
+
+- [O] `download.developer.apple.com` serves Xcode `.xip` files with HTTP Range requests (206) once the user is signed
+  in to Apple Developer (`ADCDownloadAuth` cookie). No redirect; browsers cannot test it from developer.apple.com
+  because of CORS, an app can.
+- [O] Xcode 27.1 `.xip`: 2.03 GB, 614 pbzx chunks, 6 runs of stored (incompressible) chunks. Files are not in path
+  order (similar files are grouped), so a bisection over paths fails; the stored runs reveal `.pkg`/`.dmg` files instead.
+  `XcodeSystemResources.pkg` (147 MB) lies in such a run; its `Payload` is pbzx again (15 chunks), with
+  `iOS_DDI.dmg` (33 MB) in 2 stored chunks – readable byte-exactly through both layers.
+- [O] Full search: 121 MB in 645 requests, 139 s (129 s for the sequential index requests, ≈ 0.2 s each).
+  With a verified position hint: 32.8 MB in 20 requests, 7 s. The result is byte-identical to Xcode's own copy.
+
 ## 6. Open points
 
 - Whether an unlisted service is reachable via `serviceconnection.create` (not tested: invasive).

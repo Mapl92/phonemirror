@@ -135,7 +135,8 @@ final class PBZXStream: @unchecked Sendable {
     private let source: Source
     private var cached: (index: Int, data: Data)?
 
-    private init(chunks: [Chunk], source: @escaping Source) {
+    /// A stream from a known (possibly partial) chunk table, e.g. from a `DDIHint`.
+    init(chunks: [Chunk], source: @escaping Source) {
         self.chunks = chunks
         self.source = source
     }
@@ -246,6 +247,20 @@ public enum RemoteXIPFetcher {
             progress("Reading the archive index…")
             let layout = try XIPExtractor.parseHeader(try await reader.read(0, 28))
             report.archiveSize = reader.totalSize ?? 0
+
+            // Fast path: known positions, verified before use.
+            if let hint = await DDIHints.load().first(where: { $0.matches(xipURL, size: report.archiveSize) }) {
+                do {
+                    let url = directory.appendingPathComponent("iOS_DDI.dmg")
+                    try await fetchWithHint(hint, reader: reader, to: url, progress: progress)
+                    report.notes.append("used position hint")
+                    return (.diskImage(url), finish("disk image via position hint"))
+                } catch {
+                    report.notes.append("hint rejected: \(error.localizedDescription)")
+                    logger.notice("DDI hint rejected: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+
             let content = try XIPExtractor.parseTOC(try await reader.read(layout.tocOffset, Int(layout.tocLength)))
             let outer = try await PBZXStream.index(source: reader.read, start: layout.heapOffset + content.offset, length: content.length) { fraction in
                 progress("Indexing the Xcode archive… \(Int(fraction * 100)) %")
@@ -260,7 +275,8 @@ public enum RemoteXIPFetcher {
 
             do {
                 let url = directory.appendingPathComponent("iOS_DDI.dmg")
-                try await extractDiskImage(from: package, in: outer, to: url, report: &report, progress: progress)
+                let (inner, image) = try await extractDiskImage(from: package, in: outer, to: url, report: &report, progress: progress)
+                learnHint(xipURL: xipURL, archiveSize: report.archiveSize, outer: outer, package: package, inner: inner, image: image)
                 return (.diskImage(url), finish("disk image only"))
             } catch {
                 report.notes.append("in-place read failed: \(error.localizedDescription)")
@@ -277,7 +293,8 @@ public enum RemoteXIPFetcher {
 
     /// Inside the package (xar): the `Payload` is pbzx again; the DMG sits in stored chunks there too.
     private static func extractDiskImage(from package: CPIOHeader, in outer: PBZXStream, to url: URL,
-                                         report: inout RemoteXIPReport, progress: @escaping @Sendable (String) -> Void) async throws {
+                                         report: inout RemoteXIPReport,
+                                         progress: @escaping @Sendable (String) -> Void) async throws -> (PBZXStream, CPIOHeader) {
         let base = package.dataStart
         let packageRead: PBZXStream.Source = { offset, length in try await outer.read(base + offset, length) }
         let layout = try XIPExtractor.parseHeader(try await packageRead(0, 28))
@@ -287,6 +304,57 @@ public enum RemoteXIPFetcher {
         progress("Looking for the iOS disk image…")
         let image = try await locate(suffix: diskImageSuffix, in: inner, minimumChunks: 1, report: &report)
         try await copy(from: inner, start: image.dataStart, size: image.fileSize, to: url, progress: progress)
+        try requireDiskImageTrailer(url)
+        return (inner, image)
+    }
+
+    // MARK: Position hints
+
+    /// Reads the image with known positions. Checks first: every hinted chunk header must match the archive.
+    static func fetchWithHint(_ hint: DDIHint, reader: RangeReader, to url: URL,
+                              progress: @escaping @Sendable (String) -> Void) async throws {
+        progress("Checking the known position in \(hint.xip)…")
+        for chunk in hint.outer where try await reader.read(chunk.offset - 16, 16) != chunk.header {
+            throw RemoteXIPError.notFound("outer chunk at \(chunk.offset) differs")
+        }
+        let outer = PBZXStream(chunks: hint.outer.map(\.pbzx), source: reader.read)
+        let base = hint.package.dataStart
+        let packageRead: PBZXStream.Source = { offset, length in try await outer.read(base + offset, length) }
+        for chunk in hint.inner where try await packageRead(chunk.offset - 16, 16) != chunk.header {
+            throw RemoteXIPError.notFound("package chunk at \(chunk.offset) differs")
+        }
+        let inner = PBZXStream(chunks: hint.inner.map(\.pbzx), source: packageRead)
+        try await copy(from: inner, start: hint.image.dataStart, size: hint.image.size, to: url, progress: progress)
+        try requireDiskImageTrailer(url)
+    }
+
+    /// A UDIF disk image ends with a 512-byte "koly" trailer.
+    static func requireDiskImageTrailer(_ url: URL) throws {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let size = try file.seekToEnd()
+        guard size > 512 else { throw RemoteXIPError.notFound("disk image too small") }
+        try file.seek(toOffset: size - 512)
+        guard try file.read(upToCount: 4) == Data("koly".utf8) else { throw RemoteXIPError.notFound("not a disk image") }
+    }
+
+    private static func learnHint(xipURL: URL, archiveSize: UInt64, outer: PBZXStream, package: CPIOHeader,
+                                  inner: PBZXStream, image: CPIOHeader) {
+        let packageEnd = package.dataStart + package.fileSize
+        let imageEnd = image.dataStart + image.fileSize
+        let components = xipURL.pathComponents
+        let hint = DDIHint(
+            xip: components.suffix(2).joined(separator: "/"),
+            archiveSize: archiveSize,
+            build: nil,
+            outer: outer.chunks.filter { $0.uncompressedStart < packageEnd && $0.uncompressedStart + $0.uncompressedSize > package.dataStart }
+                .map(DDIHint.Chunk.init),
+            package: DDIHint.Member(name: package.name, dataStart: package.dataStart, size: package.fileSize),
+            inner: inner.chunks.filter { $0.uncompressedStart < imageEnd && $0.uncompressedStart + $0.uncompressedSize > image.dataStart }
+                .map(DDIHint.Chunk.init),
+            image: DDIHint.Member(name: image.name, dataStart: image.dataStart, size: image.fileSize)
+        )
+        DDIHints.learn(hint)
     }
 
     /// Finds a large member by checking, for each run of stored chunks, which file starts there.

@@ -63,3 +63,34 @@ import Testing
         #expect((request["Cryptex1,UDID"] as? Data)?.count == 16)
     }
 }
+
+@Suite struct DDIHintTests {
+    let hint = DDIHint(
+        xip: "Xcode_27.1/Xcode_27.1.xip", archiveSize: 2_027_400_000, build: nil,
+        outer: [DDIHint.Chunk(offset: 1_000_016, compressed: 16_777_216, start: 33_554_432, length: 16_777_216)],
+        package: DDIHint.Member(name: "./Xcode.app/Contents/Resources/Packages/XcodeSystemResources.pkg", dataStart: 33_600_000, size: 147_000_000),
+        inner: [DDIHint.Chunk(offset: 9_000, compressed: 16_777_216, start: 0, length: 16_777_216)],
+        image: DDIHint.Member(name: "./Library/Developer/CoreDevice/CandidateDDIs/iOS_DDI.dmg", dataStart: 100, size: 32_000_000)
+    )
+
+    @Test func roundTripsAndMatches() throws {
+        #expect(DDIHints.decode(DDIHints.encode([hint])) == [hint])
+        let url = URL(string: "https://download.developer.apple.com/Developer_Tools/Xcode_27.1/Xcode_27.1.xip")!
+        #expect(hint.matches(url, size: 2_027_400_000))
+        #expect(!hint.matches(url, size: 1))
+        #expect(!hint.matches(URL(string: "https://download.developer.apple.com/Developer_Tools/Xcode_27/Xcode_27.xip")!, size: 2_027_400_000))
+    }
+
+    @Test func chunkHeaderIsBigEndianLengths() {
+        #expect([UInt8](hint.outer[0].header) == [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0])
+    }
+
+    @Test func requiresKolyTrailer() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("koly-\(UUID().uuidString).dmg")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try (Data(repeating: 1, count: 1000) + Data("koly".utf8) + Data(count: 508)).write(to: file)
+        try RemoteXIPFetcher.requireDiskImageTrailer(file)
+        try Data(repeating: 1, count: 2000).write(to: file)
+        #expect(throws: RemoteXIPError.self) { try RemoteXIPFetcher.requireDiskImageTrailer(file) }
+    }
+}

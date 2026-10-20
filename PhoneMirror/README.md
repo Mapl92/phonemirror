@@ -22,7 +22,9 @@ Tested with an iPhone 15 on iOS 27.0.1, macOS 27.0.1 and Xcode 27.1:
   otherwise its own copy in `~/Library/Application Support/PhoneMirror/DDI`. **Device › Set Up iPhone…** imports it
   from an Xcode download (`.xip`, Xcode does not have to be installed), an `Xcode.app`, `XcodeSystemResources.pkg`,
   `iOS_DDI.dmg` or an `iOS_DDI` folder; Apple's package signature is checked. An Xcode in /Applications is used
-  automatically. The native mode mounts the image itself (no `devicectl`); the iPhone must be unlocked for that.
+  automatically. **"Download from Apple…"** signs in to Apple Developer in a web view (non-persistent, cookies in
+  memory only) and reads just the image out of the newest Xcode `.xip` with HTTP Range requests (see "DDI position
+  hints" below). The native mode mounts the image itself (no `devicectl`); the iPhone must be unlocked for that.
   A new major iOS version needs the DDI from a matching Xcode.
   The pymobiledevice3 mode and agent control (WebDriverAgent via `xcodebuild`) still use Xcode.
 - Only for the "pymobiledevice3" connection mode: `uv tool install pymobiledevice3` (≥ 11.36).
@@ -185,6 +187,16 @@ notarizes and staples the app and a DMG, writes `SHA256SUMS.txt` and creates a *
 `Scripts/release.sh <version> --dry-run` builds the same bundle with an ad-hoc signature and the hardened runtime,
 without notarization or GitHub, to check that everything still works under the hardened runtime.
 `--no-github` notarizes but skips the GitHub release.
+
+## DDI position hints (maintainers)
+
+Without a hint, "Download from Apple…" indexes the whole Xcode archive (≈ 600 sequential requests, ≈ 2 minutes,
+≈ 120 MB). With a hint for that Xcode build it reads the image directly (≈ 33 MB, ≈ 7 s). Hints are positions only –
+no Apple content – and are checked against the archive before use; a mismatch falls back to the full search.
+
+PhoneMirror loads hints from `Resources/ddi-hints.json` on GitHub (so new ones need no app update), the copy in the
+app bundle, and positions it learned itself. After a full search it writes the new hint to
+`~/Library/Logs/PhoneMirror/ddi-hint.json`; add that entry to `Resources/ddi-hints.json` for each new Xcode release.
 
 ## License
 

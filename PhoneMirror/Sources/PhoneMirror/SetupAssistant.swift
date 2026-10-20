@@ -159,10 +159,15 @@ final class SetupAssistantController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// Right after the mirror connection pauses the iPhone is briefly unreachable – retry a few times.
     private static func developerModeStatus() async -> Bool? {
-        guard let rsd = try? await RemoteServiceDiscovery.connect() else { return nil }
-        defer { rsd.close() }
-        return try? await DeveloperMode.isEnabled(rsd: rsd)
+        for attempt in 0..<3 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
+            guard let rsd = try? await RemoteServiceDiscovery.connect() else { continue }
+            defer { rsd.close() }
+            if let enabled = try? await DeveloperMode.isEnabled(rsd: rsd) { return enabled }
+        }
+        return nil
     }
 
     @objc private func pair() {
