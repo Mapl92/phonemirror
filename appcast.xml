@@ -5,5 +5,14 @@
     <link>https://github.com/Mapl92/phonemirror</link>
     <description>Updates for PhoneMirror (written by PhoneMirror/Scripts/release.sh).</description>
     <language>en</language>
+    <item>
+      <title>Version 0.7</title>
+      <pubDate>Tue, 20 Oct 2026 12:49:51 -0000</pubDate>
+      <sparkle:version>17</sparkle:version>
+      <sparkle:shortVersionString>0.7</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/Mapl92/phonemirror/releases/tag/v0.7</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/Mapl92/phonemirror/releases/download/v0.7/PhoneMirror-0.7.zip" sparkle:edSignature="mjm9KIrxKBDnl/XWsUCmyWK8Nl0YiwbMkQ6liAXSUygVLt2mwqo5mcbCls1Buzzyn7SqnMfYft6LelaSc5ifCg==" length="2932530" type="application/octet-stream"/>
+    </item>
   </channel>
 </rss>
