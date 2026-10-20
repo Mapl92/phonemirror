@@ -118,6 +118,10 @@ public actor NativeSession: MirrorSession {
     private static func connectWithDeveloperServices(udid: String?) async throws -> RemoteServiceDiscovery {
         let rsd = try await RemoteServiceDiscovery.connect(udid: udid)
         guard rsd.port(of: DisplayService.name) == nil else { return rsd }
+        if (try? await DeveloperMode.isEnabled(rsd: rsd)) == false {
+            rsd.close()
+            throw DeveloperDiskImageError.developerModeOff
+        }
         do {
             try await DeveloperDiskImageMounter.mountIfNeeded(rsd: rsd)
             rsd.close()

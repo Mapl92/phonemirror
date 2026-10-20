@@ -8,6 +8,7 @@ public enum DeveloperDiskImageError: LocalizedError {
     case bundleMissing(String)
     case unsupportedOS(String)
     case locked
+    case developerModeOff
     case signing(String)
     case cryptexd(String)
 
@@ -19,6 +20,8 @@ public enum DeveloperDiskImageError: LocalizedError {
             "iOS \(version) installs the Developer Disk Image differently; iOS 26.4 or later is required."
         case .locked:
             "Please unlock the iPhone so the Developer Disk Image can be mounted."
+        case .developerModeOff:
+            "Developer Mode is off on the iPhone. Choose Device › Set Up iPhone… to show the switch."
         case .signing(let message):
             "Apple's signing server refused the Developer Disk Image: \(message)"
         case .cryptexd(let message):

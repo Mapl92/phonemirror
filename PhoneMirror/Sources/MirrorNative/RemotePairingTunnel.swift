@@ -19,6 +19,7 @@ private final class LockedBox<Value>: @unchecked Sendable {
 
 public enum NativeTunnelError: LocalizedError {
     case deviceNotFound
+    case notPaired(String)
     case pairing(String)
     case noTunnelAddress
     case noRSDPort(String)
@@ -26,7 +27,8 @@ public enum NativeTunnelError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .deviceNotFound: "remotepairingd reports no paired device"
+        case .deviceNotFound: "No iPhone found. Connect it by USB (or to the same Wi-Fi after pairing) and unlock it."
+        case .notPaired(let name): "“\(name)” is not paired with this Mac. Choose Device › Pair iPhone… (USB cable needed once)."
         case .pairing(let message): "Pairing: \(message)"
         case .noTunnelAddress: "remotepairingd returned no tunnel address"
         case .noRSDPort(let address): "No RSD port from remoted to \(address) found"
@@ -55,9 +57,31 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         close()
     }
 
-    /// Find the device (`udid` or the first one), pair if needed, create an assertion. Returns the tunnel IPv6.
+    /// Summary of the device found by the last browse (`find`, `open`, `command`).
+    public struct DeviceSummary: Sendable, Equatable {
+        public var name: String
+        public var udid: String
+        public var isPaired: Bool
+        public var isConnected: Bool
+    }
+
+    public var device: DeviceSummary? {
+        guard let info = deviceInfo else { return nil }
+        func string(_ object: xpc_object_t?, _ key: String) -> String? {
+            guard let object, let value = xpc_dictionary_get_string(object, key) else { return nil }
+            return String(cString: value)
+        }
+        let auth = string(xpc_dictionary_get_value(info, "authState"), "rawCase")
+        let connection = string(xpc_dictionary_get_value(info, "connectionState"), "rawCase")
+        return DeviceSummary(name: string(info, "name") ?? "iPhone", udid: string(info, "udid") ?? "",
+                             isPaired: auth == "authenticated", isConnected: connection == "available")
+    }
+
+    /// Find the device (`udid` or the first one), create an assertion. Returns the tunnel IPv6.
+    /// Never starts interactive pairing – an unpaired device throws `.notPaired` (see `pair`).
     public func open(udid wanted: String? = nil) throws -> String {
         let endpoint = try browse(udid: wanted)
+        if let device, !device.isPaired { throw NativeTunnelError.notPaired(device.name) }
         let device = xpc_connection_create_from_endpoint(endpoint)
         xpc_connection_set_event_handler(device) { _ in }
         xpc_connection_activate(device)
@@ -65,7 +89,7 @@ public final class RemotePairingTunnel: @unchecked Sendable {
 
         // Already paired is reported as RemotePairingError 1002 – harmless.
         let initiate = try request(device, "RemotePairing.InitiatePairingCommand") { body in
-            xpc_dictionary_set_bool(body, "requireNonInteractive", false)
+            xpc_dictionary_set_bool(body, "requireNonInteractive", true)
         }
         if let error = xpc_dictionary_get_value(initiate, "error") {
             let code = xpc_dictionary_get_int64(error, "code")
@@ -84,6 +108,24 @@ public final class RemotePairingTunnel: @unchecked Sendable {
         else { throw NativeTunnelError.noTunnelAddress }
         tunnelAddress = String(cString: address)
         return tunnelAddress!
+    }
+
+    /// Pairs the device interactively: the iPhone shows “Trust This Computer?” and asks for its passcode.
+    /// Waits up to `timeout` seconds for the user. Initial pairing needs the iPhone on USB.
+    public func pair(udid wanted: String? = nil, timeout: Double = 180) throws {
+        let endpoint = try browse(udid: wanted)
+        if device?.isPaired == true { return }
+        let connection = xpc_connection_create_from_endpoint(endpoint)
+        xpc_connection_set_event_handler(connection) { _ in }
+        xpc_connection_activate(connection)
+        deviceConnection = connection
+        let reply = try request(connection, "RemotePairing.InitiatePairingCommand", timeout: timeout) { body in
+            xpc_dictionary_set_bool(body, "requireNonInteractive", false)
+        }
+        if let error = xpc_dictionary_get_value(reply, "error") {
+            let code = xpc_dictionary_get_int64(error, "code")
+            if code != 1002 { throw NativeTunnelError.pairing("rejected or cancelled (code \(code))") }
+        }
     }
 
     /// Only looks the device up (no pairing, no tunnel); see `deviceDescription`.

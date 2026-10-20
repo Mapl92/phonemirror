@@ -15,8 +15,9 @@ Tested with an iPhone 15 on iOS 27.0.1, macOS 27.0.1 and Xcode 27.1:
 
 ## Requirements
 
-- iPhone with iOS 27, Developer Mode, and Settings › Developer › "Enable UI Automation" turned on.
-- The iPhone is paired with this Mac (Xcode/Device Hub).
+- iPhone with iOS 27 and Developer Mode on; for agent control also Settings › Developer › "Enable UI Automation".
+- The iPhone is paired with this Mac. **Device › Set Up iPhone…** pairs it without Xcode (USB cable once, then
+  Wi-Fi is enough) and shows the hidden Developer Mode switch on the iPhone. Pairing via Xcode/Device Hub works too.
 - The Developer Disk Image files that Xcode 27 installs in `/Library/Developer/DeveloperDiskImages`. In the native
   mode PhoneMirror mounts the image itself (no `devicectl`, no running Xcode); the iPhone must be unlocked for that.
   The `ddiRestorePath` default points PhoneMirror at another unpacked `iOS_DDI/Restore` directory.

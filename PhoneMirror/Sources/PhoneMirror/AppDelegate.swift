@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let agentBridge = AgentBridge()
     private var mcpServer: MCPHTTPServer?
     private var wdaWarmup: Task<Void, Never>?
+    private var setupAssistant: SetupAssistantController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
@@ -19,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         agentBridge.controller = controller
         if AppSettings.shared.mcpEnabled { startMCPServer() }
         windowController = controller
+        controller.onSetupNeeded = { [weak self] in self?.openSetupAssistant(nil) }
         controller.showWindow(nil)
         controller.connect()
         NSApp.activate()
@@ -92,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             connectionMenu.addItem(item)
         }
         deviceMenu.addItem(submenu: connectionMenu, title: "Connection")
+        deviceMenu.addItem(withTitle: "Set Up iPhone…", action: #selector(AppDelegate.openSetupAssistant(_:)), keyEquivalent: "")
         deviceMenu.addItem(.separator())
         deviceMenu.addItem(withTitle: "Agent Control (MCP)", action: #selector(AppDelegate.toggleMCP(_:)), keyEquivalent: "")
         deviceMenu.addItem(withTitle: "Copy MCP Command for Claude Code", action: #selector(AppDelegate.copyMCPCommand(_:)), keyEquivalent: "")
@@ -177,6 +180,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A file being played back stays untouched by the switch.
         guard UserDefaults.standard.string(forKey: "replay") == nil else { return }
         windowController?.replaceTransport(makeTransport())
+    }
+
+    /// Pairing and Developer Mode without Xcode; pauses the mirror connection while open.
+    @objc func openSetupAssistant(_ sender: Any?) {
+        if let setupAssistant {
+            setupAssistant.show()
+            return
+        }
+        let assistant = SetupAssistantController()
+        assistant.onClose = { [weak self] in
+            self?.setupAssistant = nil
+            self?.windowController?.connect()
+        }
+        setupAssistant = assistant
+        Task {
+            await windowController?.suspendConnection()
+            assistant.show()
+        }
     }
 
     @objc func toggleSound(_ sender: Any?) {

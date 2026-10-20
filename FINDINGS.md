@@ -269,8 +269,11 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
 - [O] After unplugging the cable, the running mirror session continued over Wi-Fi, and a fresh start (new assertion,
   RSD, video and audio) worked without the cable too: `wirelessConnectivity = 1`, `networkAdvertActive = true`. So
   pairing once over USB with PhoneMirror is enough for wireless use afterwards.
-- [O] Over RSD the device offers `com.apple.amfi.lockdown.shim.remote`, which pymobiledevice3 uses to reveal the
-  Developer Mode switch – a way to enable Developer Mode without Xcode (not implemented yet).
+- [O] Lockdown services over RSD (`*.shim.remote`, `com.apple.mobile.lockdown.remote.trusted`): plain TCP, plists with a
+  4-byte big-endian length; `{"Request": "RSDCheckin", "ProtocolVersion": "2"}` is answered with `RSDCheckin` and
+  `StartService`. `GetValue` in domain `com.apple.security.mac.amfi`, key `DeveloperModeStatus`, returns the state;
+  `com.apple.amfi.lockdown.shim.remote` with `{"action": 0}` reveals the Developer Mode switch (`success: true`).
+  PhoneMirror's setup assistant uses both.
 
 ## 6. Open points
 

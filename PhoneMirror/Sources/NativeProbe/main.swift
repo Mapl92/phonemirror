@@ -47,6 +47,15 @@ do {
         let tunnel = RemotePairingTunnel()
         print(try tunnel.command(type, timeout: timeout, flags: flags, strings: strings))
         tunnel.close()
+    case "devmode":
+        // native-probe devmode [reveal]
+        let rsd = try await RemoteServiceDiscovery.connect()
+        defer { rsd.close() }
+        print("Developer Mode enabled: \(try await DeveloperMode.isEnabled(rsd: rsd).map(String.init) ?? "unknown")")
+        if CommandLine.arguments.dropFirst(2).first == "reveal" {
+            try await DeveloperMode.revealSetting(rsd: rsd)
+            print("Developer Mode switch revealed in Settings")
+        }
     case "ddi":
         // native-probe ddi [status|unmount|mount]
         let action = CommandLine.arguments.dropFirst(2).first ?? "status"

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import MirrorCore
+import MirrorNative
 import os
 
 /// One window per device: holds the connection (with automatic reconnect) and wires up
@@ -30,6 +31,9 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     var activeSession: (any MirrorSession)? { session }
     var currentScreen: DeviceScreen { screen }
     var transportName: String { transport.displayName }
+    /// Called (once per launch) when the iPhone needs pairing or Developer Mode – opens the setup assistant.
+    var onSetupNeeded: (() -> Void)?
+    private var offeredSetup = false
 
     /// The agent did something: indicator in the window, with position for touches.
     func noteAgentActivity(at point: TouchPoint?) {
@@ -123,6 +127,12 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
                 return
             } catch {
                 reason = error.localizedDescription
+                if Self.needsSetup(error), !offeredSetup {
+                    offeredSetup = true
+                    mirrorView.showStatus(reason)
+                    onSetupNeeded?()
+                    return
+                }
             }
             await tearDownSession()
             guard !Task.isCancelled else { return }
@@ -237,6 +247,20 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         Task { await shutdown() }
+    }
+
+    private static func needsSetup(_ error: Error) -> Bool {
+        if case NativeTunnelError.notPaired = error { return true }
+        if case DeveloperDiskImageError.developerModeOff = error { return true }
+        return false
+    }
+
+    /// Pauses the connection (e.g. while the setup assistant talks to the iPhone); `connect()` resumes.
+    func suspendConnection() async {
+        connectionTask?.cancel()
+        connectionTask = nil
+        await tearDownSession()
+        mirrorView.showStatus("Setting up the iPhone…")
     }
 
     /// Closes the session (in live mode, ends the pymobiledevice3 process).
