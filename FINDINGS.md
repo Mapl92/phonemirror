@@ -266,7 +266,9 @@ JaviSoto/device-hub-ios, ALEXoicu/iPhone-Mirroring-Device-Hub, Jakeelamb/iphone-
 - [O] After re-pairing this way (iPhone on USB), the tunnel, RSD, the already mounted DDI and PhoneMirror's mirroring
   worked unchanged. No Xcode process was involved in pairing.
 - [O] The iPhone reports `isWirelesslyPairableDevice = false`: initial pairing needs a USB cable.
-- [?] Whether the tunnel then also comes up over Wi-Fi without the cable (as after Xcode's pairing) is untested.
+- [O] After unplugging the cable, the running mirror session continued over Wi-Fi, and a fresh start (new assertion,
+  RSD, video and audio) worked without the cable too: `wirelessConnectivity = 1`, `networkAdvertActive = true`. So
+  pairing once over USB with PhoneMirror is enough for wireless use afterwards.
 - [O] Over RSD the device offers `com.apple.amfi.lockdown.shim.remote`, which pymobiledevice3 uses to reveal the
   Developer Mode switch – a way to enable Developer Mode without Xcode (not implemented yet).
 
