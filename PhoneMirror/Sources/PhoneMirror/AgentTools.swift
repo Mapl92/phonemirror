@@ -316,18 +316,8 @@ final class AgentBridge {
     func screenshot(quality: Double) async throws -> Screenshot {
         guard let frame = controller?.latestFrame else { throw AgentError("No image from the iPhone yet.") }
         let size = screen.pointSize
-        let image = CIImage(cvPixelBuffer: frame.pixelBuffer)
-        let extent = image.extent
-        // The visible area is at the top left; CoreImage counts y from the bottom.
-        let crop = CGRect(
-            x: 0, y: extent.height * (1 - frame.visible.height),
-            width: extent.width * frame.visible.width, height: extent.height * frame.visible.height
-        )
-        let orientations: [CGImagePropertyOrientation] = [.up, .right, .down, .left]
-        let upright = image.cropped(to: crop).oriented(orientations[orientation.quarterTurns])
-        let scaled = upright
-            .transformed(by: CGAffineTransform(translationX: -upright.extent.minX, y: -upright.extent.minY))
-            .transformed(by: CGAffineTransform(scaleX: size.width / upright.extent.width, y: size.height / upright.extent.height))
+        let upright = FrameRenderer.upright(frame.pixelBuffer, visible: frame.visible, orientation: orientation)
+        let scaled = upright.transformed(by: CGAffineTransform(scaleX: size.width / upright.extent.width, y: size.height / upright.extent.height))
         guard let jpeg = ciContext.jpegRepresentation(
             of: scaled, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
             options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]

@@ -25,6 +25,11 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: Key.soundEnabled) }
     }
 
+    var keepOnTop: Bool {
+        get { defaults.bool(forKey: Key.keepOnTop) }
+        set { defaults.set(newValue, forKey: Key.keepOnTop) }
+    }
+
     var clipboardSync: Bool {
         get { defaults.bool(forKey: Key.clipboardSync) }
         set { defaults.set(newValue, forKey: Key.clipboardSync) }
@@ -70,6 +75,7 @@ final class AppSettings {
         static let soundEnabled = "soundEnabled"
         static let clipboardSync = "clipboardSync"
         static let zoom = "zoom"
+        static let keepOnTop = "keepOnTop"
     }
 }
 

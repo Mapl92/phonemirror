@@ -30,6 +30,8 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private(set) var latestFrame: Frame?
     var activeSession: (any MirrorSession)? { session }
     var currentScreen: DeviceScreen { screen }
+    private var recorder: ScreenRecorder?
+    var isRecording: Bool { recorder != nil }
     private(set) var orientation = DeviceOrientation.portrait
     /// The screen as the user (and an agent) sees it: width and height swapped in landscape.
     var displayedScreen: DeviceScreen { orientation.displayed(screen) }
@@ -67,6 +69,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         mirrorView.onInput = { [weak self] event in self?.inputPump?.enqueue(event) }
         audioPlayer.isEnabled = settings.soundEnabled
+        window.level = settings.keepOnTop ? .floating : .normal
         clipboard.isEnabled = settings.clipboardSync
         clipboard.onLocalChange = { [weak self] content in self?.pushClipboard(content) }
         apply(screen: screen, resize: true)
@@ -183,6 +186,9 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     self?.mirrorView.display(frame, visible: visible)
+                    if let self, let recorder = self.recorder {
+                        recorder.append(frame, visible: visible, orientation: self.orientation)
+                    }
                     self?.latestFrame = Frame(pixelBuffer: frame, visible: visible, time: Date())
                 }
             }
@@ -207,6 +213,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
             }
         case .audio(let chunk):
             audioPlayer.play(chunk)
+            recorder?.append(chunk)
         case .clipboard(let content):
             clipboard.applyRemote(content)
         case .screenChanged(let newScreen):
@@ -281,8 +288,59 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         mirrorView.showStatus("Setting up the iPhone…")
     }
 
+    // MARK: - Capture
+
+    /// Saves the current iPhone screen (upright, full resolution) to ~/Pictures/PhoneMirror.
+    func takeScreenshot() {
+        guard let frame = latestFrame else {
+            mirrorView.showNotice("No image yet")
+            return
+        }
+        let image = FrameRenderer.upright(frame.pixelBuffer, visible: frame.visible, orientation: orientation)
+        do {
+            guard let png = FrameRenderer.png(image) else { throw CocoaError(.fileWriteUnknown) }
+            let url = try FrameRenderer.outputURL(in: .picturesDirectory, prefix: "PhoneMirror Screenshot", extension: "png")
+            try png.write(to: url)
+            mirrorView.showNotice("Screenshot saved to Pictures › PhoneMirror")
+        } catch {
+            mirrorView.showNotice("Screenshot failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Starts or stops a recording (video and sound) to ~/Movies/PhoneMirror.
+    func toggleRecording() {
+        if let recorder {
+            self.recorder = nil
+            mirrorView.isRecording = false
+            Task {
+                await recorder.finish()
+                NSWorkspace.shared.activateFileViewerSelecting([recorder.url])
+            }
+            return
+        }
+        guard let frame = latestFrame else {
+            mirrorView.showNotice("No image yet")
+            return
+        }
+        let size = FrameRenderer.upright(frame.pixelBuffer, visible: frame.visible, orientation: orientation).extent.size
+        do {
+            let url = try FrameRenderer.outputURL(in: .moviesDirectory, prefix: "PhoneMirror Recording", extension: "mov")
+            let recorder = try ScreenRecorder(url: url, size: size)
+            self.recorder = recorder
+            // A resting screen sends no new frames: start with the current picture.
+            recorder.append(frame.pixelBuffer, visible: frame.visible, orientation: orientation)
+            mirrorView.isRecording = true
+            // A static screen sends no frames – ask for one so the recording starts with a picture.
+            let session = session
+            Task { await session?.requestKeyframe() }
+        } catch {
+            mirrorView.showNotice("Recording failed: \(error.localizedDescription)")
+        }
+    }
+
     /// Closes the session (in live mode, ends the pymobiledevice3 process).
     func shutdown() async {
+        if recorder != nil { toggleRecording() }
         connectionTask?.cancel()
         connectionTask = nil
         clipboard.invalidate()
@@ -305,6 +363,15 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
 
     func send(_ event: InputEvent) {
         inputPump?.enqueue(event)
+    }
+
+    /// Keeps the mirror above other windows (e.g. while working in Xcode or a browser).
+    var keepOnTop: Bool {
+        get { settings.keepOnTop }
+        set {
+            settings.keepOnTop = newValue
+            window?.level = newValue ? .floating : .normal
+        }
     }
 
     var soundEnabled: Bool {

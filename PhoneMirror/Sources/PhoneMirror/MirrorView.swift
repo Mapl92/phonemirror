@@ -33,6 +33,10 @@ final class MirrorView: NSView {
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let agentBadge = NSTextField(labelWithString: "Agent in control")
     private var agentBadgeHideTask: Task<Void, Never>?
+    /// Short notices ("Screenshot saved") and the recording indicator.
+    private let noticeLabel = NSTextField(labelWithString: "")
+    private let recordingBadge = NSTextField(labelWithString: "  ● REC  ")
+    private var noticeHideTask: Task<Void, Never>?
     private var activeTouch = false
     private let edgeSnapping = EdgeSnapping()
     private var homeGesture = HomeIndicatorGestureRecognizer(screen: .iPhone15)
@@ -68,6 +72,25 @@ final class MirrorView: NSView {
         NSLayoutConstraint.activate([
             agentBadge.centerXAnchor.constraint(equalTo: centerXAnchor),
             agentBadge.topAnchor.constraint(equalTo: topAnchor, constant: 34),
+        ])
+
+        for (label, color) in [(noticeLabel, NSColor.black.withAlphaComponent(0.7)), (recordingBadge, NSColor.systemRed.withAlphaComponent(0.9))] {
+            label.font = .systemFont(ofSize: 11, weight: .semibold)
+            label.textColor = .white
+            label.backgroundColor = color
+            label.drawsBackground = true
+            label.alignment = .center
+            label.isHidden = true
+            label.wantsLayer = true
+            label.layer?.cornerRadius = 4
+            label.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(label)
+        }
+        NSLayoutConstraint.activate([
+            noticeLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            noticeLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -40),
+            recordingBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            recordingBadge.topAnchor.constraint(equalTo: topAnchor, constant: 34),
         ])
 
         statusLabel.alignment = .center
@@ -143,6 +166,21 @@ final class MirrorView: NSView {
             guard !Task.isCancelled else { return }
             self?.agentBadge.isHidden = true
         }
+    }
+
+    func showNotice(_ text: String) {
+        noticeLabel.stringValue = "  \(text)  "
+        noticeLabel.isHidden = false
+        noticeHideTask?.cancel()
+        noticeHideTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.noticeLabel.isHidden = true
+        }
+    }
+
+    var isRecording = false {
+        didSet { recordingBadge.isHidden = !isRecording }
     }
 
     func showStatus(_ text: String) {

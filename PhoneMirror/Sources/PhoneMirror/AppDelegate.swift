@@ -82,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         deviceMenu.addItem(buttonItem("Volume Up", .volumeUp, key: String(UnicodeScalar(NSUpArrowFunctionKey)!), modifiers: [.command]))
         deviceMenu.addItem(buttonItem("Volume Down", .volumeDown, key: String(UnicodeScalar(NSDownArrowFunctionKey)!), modifiers: [.command]))
         deviceMenu.addItem(.separator())
+        deviceMenu.addItem(withTitle: "Take Screenshot", action: #selector(AppDelegate.takeScreenshot(_:)), keyEquivalent: "s")
+        deviceMenu.addItem(withTitle: "Start Recording", action: #selector(AppDelegate.toggleRecording(_:)), keyEquivalent: "R")
+        deviceMenu.addItem(.separator())
         let rotateLeft = NSMenuItem(title: "Rotate Left", action: #selector(AppDelegate.rotateLeft(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
         rotateLeft.keyEquivalentModifierMask = [.command, .option]
         deviceMenu.addItem(rotateLeft)
@@ -111,6 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowMenu.addItem(withTitle: "Larger", action: #selector(AppDelegate.zoomIn(_:)), keyEquivalent: "+")
         windowMenu.addItem(withTitle: "Smaller", action: #selector(AppDelegate.zoomOut(_:)), keyEquivalent: "-")
         windowMenu.addItem(withTitle: "Actual Size", action: #selector(AppDelegate.actualSize(_:)), keyEquivalent: "0")
+        windowMenu.addItem(.separator())
+        let keepOnTop = NSMenuItem(title: "Keep on Top", action: #selector(AppDelegate.toggleKeepOnTop(_:)), keyEquivalent: "t")
+        keepOnTop.keyEquivalentModifierMask = [.command, .shift]
+        windowMenu.addItem(keepOnTop)
         windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         mainMenu.addItem(submenu: windowMenu, title: "Window")
@@ -207,6 +214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func takeScreenshot(_ sender: Any?) { windowController?.takeScreenshot() }
+    @objc func toggleKeepOnTop(_ sender: Any?) { windowController?.keepOnTop.toggle() }
+    @objc func toggleRecording(_ sender: Any?) { windowController?.toggleRecording() }
     @objc func rotateLeft(_ sender: Any?) { windowController?.rotate(clockwise: false) }
     @objc func rotateRight(_ sender: Any?) { windowController?.rotate(clockwise: true) }
 
@@ -245,6 +255,10 @@ extension AppDelegate: NSMenuItemValidation {
     /// Checkmarks for the toggles in the Device menu.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(toggleKeepOnTop(_:)):
+            menuItem.state = AppSettings.shared.keepOnTop ? .on : .off
+        case #selector(toggleRecording(_:)):
+            menuItem.title = windowController?.isRecording == true ? "Stop Recording" : "Start Recording"
         case #selector(toggleSound(_:)):
             menuItem.state = (windowController?.soundEnabled ?? AppSettings.shared.soundEnabled) ? .on : .off
         case #selector(selectConnection(_:)):
